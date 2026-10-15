@@ -1,0 +1,29 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+venv_*/
+env/
+
+# ---- Django ----
+*.log
+# ครอบคลุมไฟล์ข้างเคียงของ SQLite ด้วย (-wal, -shm, -journal)
+*.sqlite3
+*.sqlite3-*
+*.sqlite
+/staticfiles/
+/media/
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+*.stackdump
+.idea/
+.vscode/

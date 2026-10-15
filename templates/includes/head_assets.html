@@ -1,0 +1,53 @@
+{% load static %}
+{% comment %} ===================================================================
+   ส่วน <head> ที่ใช้ร่วมกันทุกหน้า - favicon, Tailwind config, ฟอนต์
+
+   เดิมโค้ดชุดนี้ถูกคัดลอกไว้ทั้งใน base.html และ login.html ทำให้เวลา
+   เปลี่ยนฟอนต์หรือสีต้องไล่แก้ทุกไฟล์ และลืมได้ง่าย รวมไว้ที่เดียวแล้ว
+
+   หน้าที่ใช้ include นี้: base.html, registration/login.html,
+   users/profile_setup.html
+   =================================================================== {% endcomment %}
+
+<!-- Favicon -->
+<link rel="icon" href="{% static 'images/favicon.ico' %}" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="{% static 'images/favicon-32.png' %}">
+<link rel="icon" type="image/png" sizes="16x16" href="{% static 'images/favicon-16.png' %}">
+<link rel="apple-touch-icon" sizes="180x180" href="{% static 'images/apple-touch-icon.png' %}">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                fontFamily: {
+                    sans: ['IBM Plex Sans Thai', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                },
+                colors: {
+                    blue: {
+                        50: '#f0f7ff',
+                        100: '#e0effe',
+                        200: '#b9ddfe',
+                        300: '#7cc2fd',
+                        400: '#36a1fa',
+                        500: '#2589ea',
+                        600: '#1a6ec1',
+                        700: '#1460ab',
+                        800: '#1052a0',
+                        900: '#0d4385',
+                        950: '#082f61'
+                    },
+                }
+            }
+        }
+    }
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+<style>
+    * { font-family: 'IBM Plex Sans Thai', sans-serif; }
+</style>

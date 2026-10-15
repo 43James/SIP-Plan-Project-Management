@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}ยืนยันการลบกลุ่มงาน - SIP-Plan{% endblock %}
+{% block page_title %}ยืนยันการลบกลุ่มงาน{% endblock %}
+{% block page_subtitle %}ระบบจะตรวจสอบก่อนว่ามีผู้ใช้งานอยู่ในกลุ่มงานนี้หรือไม่{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto">
+    <div class="bg-white rounded-2xl shadow-sm border border-red-100 overflow-hidden">
+        <div class="bg-red-50 px-6 py-5 border-b border-red-100">
+            <h3 class="text-red-600 font-bold flex items-center gap-2 text-lg">
+                <i class="fa-solid fa-triangle-exclamation"></i> ยืนยันการลบข้อมูล
+            </h3>
+        </div>
+        <form method="post" class="p-6">
+            {% csrf_token %}
+            
+            <p class="text-slate-700 text-lg mb-2">คุณต้องการลบกลุ่มงาน <strong>"{{ object.name }}"</strong> ใช่หรือไม่?</p>
+            <p class="text-slate-500 text-sm mb-6">หากลบไปแล้วจะไม่สามารถกู้คืนกลับมาได้ และไม่สามารถลบได้หากยังมีผู้ใช้งานอยู่ในกลุ่มงานนี้</p>
+
+            <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <a href="{% url 'department_list' %}" class="px-5 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-sm font-semibold transition">ยกเลิก</a>
+                <button type="submit" class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold shadow transition">
+                    <i class="fa-solid fa-trash-can mr-1"></i> ยืนยันการลบ
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

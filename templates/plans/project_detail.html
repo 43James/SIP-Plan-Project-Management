@@ -1,0 +1,430 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ project.project_name }} - SIP-Plan{% endblock %}
+{% block page_title %}รายละเอียดโครงการ{% endblock %}
+{% block page_subtitle %}{{ project.project_name }}{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex justify-between items-center">
+    <a href="{% url 'dashboard' %}" class="inline-flex items-center gap-2 text-slate-500 hover:text-blue-600 transition font-semibold text-sm">
+        <i class="fa-solid fa-arrow-left"></i> กลับไปหน้าภาพรวม
+    </a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Project Info & Budget -->
+    <div class="lg:col-span-1 space-y-6">
+        <!-- Project Info Card -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="bg-gradient-to-r from-slate-800 to-blue-900 px-5 py-4 flex justify-between items-center">
+                <h3 class="text-white font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-file-lines text-blue-300"></i> ข้อมูลโครงการ
+                </h3>
+                {% if user.is_budget_officer or user.is_executive or user.is_staff %}
+                <div class="flex items-center gap-2">
+                    <a href="{% url 'project_edit' project.pk %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg transition">
+                        <i class="fa-solid fa-pen"></i> แก้ไข
+                    </a>
+                    <a href="{% url 'project_delete' project.pk %}" class="inline-flex items-center justify-center w-7 h-7 bg-red-500/20 hover:bg-red-500/40 text-red-200 rounded-lg transition" title="ลบโครงการ">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+            <div class="p-5 space-y-4">
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold mb-1">ชื่อโครงการ</p>
+                    <p class="text-slate-800 font-medium">{{ project.project_name }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold mb-1">แผนงานที่สังกัด</p>
+                    <p class="text-slate-800 font-medium">{{ project.plan.plan_name }} ({{ project.plan.plan_code }})</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-xs text-slate-500 font-semibold mb-1">เลขที่เอกสาร</p>
+                        <p class="text-slate-800">{{ project.approval_doc_no|default:"-" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-semibold mb-1">สถานะ</p>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium 
+                            {% if project.dynamic_status_display == 'สำเร็จ' %}bg-emerald-100 text-emerald-800
+                            {% elif project.dynamic_status_display == 'เกินกำหนด' %}bg-red-100 text-red-800
+                            {% else %}bg-blue-100 text-blue-800{% endif %}">
+                            {{ project.dynamic_status_display }}
+                        </span>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-semibold mb-1">วันที่เริ่มต้น</p>
+                        <p class="text-slate-800">{{ project.start_date|date:"d M Y" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-semibold mb-1">วันที่สิ้นสุด</p>
+                        <p class="text-slate-800">{{ project.end_date|date:"d M Y" }}</p>
+                    </div>
+                </div>
+                <div class="pt-3 border-t border-slate-100">
+                    <p class="text-xs text-slate-500 font-semibold mb-2">ผู้สร้างโครงการ</p>
+                    {% if project.created_by %}
+                    <div class="flex items-center gap-2">
+                        <div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center font-bold text-[10px] shadow-sm">
+                            {{ project.created_by.first_name|first|default:project.created_by.username|first|upper }}
+                        </div>
+                        <span class="text-sm font-semibold text-slate-700">{{ project.created_by.get_full_name|default:project.created_by.username }}</span>
+                    </div>
+                    {% else %}
+                    <p class="text-slate-800 text-sm">-</p>
+                    {% endif %}
+                </div>
+                {% if total_days is not None %}
+                <div class="pt-3 border-t border-slate-100 flex justify-between items-center text-sm">
+                    <div class="text-slate-600 font-medium">ระยะเวลา: <span class="text-slate-800">{{ total_days }} วัน</span></div>
+                    <div>
+                        {% if days_overdue > 0 %}
+                        <span class="text-red-600 font-bold bg-red-50 px-2 py-1 rounded-md"><i class="fa-solid fa-clock mr-1"></i> เกินกำหนด {{ days_overdue }} วัน</span>
+                        {% elif days_remaining >= 0 %}
+                        <span class="text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded-md"><i class="fa-solid fa-hourglass-half mr-1"></i> เหลือเวลา {{ days_remaining }} วัน</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Plan Info Card -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="bg-gradient-to-r from-violet-700 to-indigo-800 px-5 py-4">
+                <h3 class="text-white font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-sitemap text-violet-200"></i> แผนงานที่สังกัด
+                </h3>
+            </div>
+            <div class="p-5 space-y-4">
+                <!-- Parent Plan -->
+                <div>
+                    <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1"><i class="fa-solid fa-layer-group mr-1"></i> แผนงานหลัก</p>
+                    <a href="{% url 'plan_detail' parent_plan.pk %}" class="block bg-indigo-50 rounded-lg p-3 border border-indigo-100 hover:border-indigo-300 transition">
+                        <p class="text-xs font-bold text-indigo-700 mb-0.5">{{ parent_plan.plan_code }}</p>
+                        <p class="text-sm text-slate-700 font-medium line-clamp-2">{{ parent_plan.plan_name }}</p>
+                        <div class="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+                            <div>
+                                <span class="text-slate-400">งบปีปัจจุบัน</span>
+                                <p class="text-slate-700 font-semibold">{{ parent_allocated_current|floatformat:2|intcomma }} บาท</p>
+                            </div>
+                            <div>
+                                <span class="text-slate-400">งบเหลื่อมปี</span>
+                                <p class="text-slate-700 font-semibold">{{ parent_allocated_carry_over|floatformat:2|intcomma }} บาท</p>
+                            </div>
+                        </div>
+                        <div class="mt-1 pt-1 border-t border-indigo-100 text-[10px]">
+                            <span class="text-slate-400">งบรวมทั้งสิ้น</span>
+                            <p class="text-indigo-700 font-bold text-xs">{{ parent_allocated_total|floatformat:2|intcomma }} บาท</p>
+                        </div>
+                    </a>
+                </div>
+
+                {% if sub_plan.parent %}
+                <!-- Sub Plan -->
+                <div>
+                    <div class="flex items-center gap-1 mb-1">
+                        <div class="w-4 h-px bg-slate-300"></div>
+                        <i class="fa-solid fa-turn-down text-slate-300 text-[10px]"></i>
+                        <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider"><i class="fa-solid fa-folder-tree mr-1"></i> แผนงานย่อย</p>
+                    </div>
+                    <div class="bg-violet-50 rounded-lg p-3 border border-violet-100 ml-3">
+                        <p class="text-xs font-bold text-violet-700 mb-0.5">{{ sub_plan.plan_code }}</p>
+                        <p class="text-sm text-slate-700 font-medium line-clamp-2">{{ sub_plan.plan_name }}</p>
+                        <div class="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+                            <div>
+                                <span class="text-slate-400">งบปีปัจจุบัน</span>
+                                <p class="text-slate-700 font-semibold">{{ sub_allocated_current|floatformat:2|intcomma }} บาท</p>
+                            </div>
+                            <div>
+                                <span class="text-slate-400">งบเหลื่อมปี</span>
+                                <p class="text-slate-700 font-semibold">{{ sub_allocated_carry_over|floatformat:2|intcomma }} บาท</p>
+                            </div>
+                        </div>
+                        <div class="mt-1 pt-1 border-t border-violet-100 text-[10px]">
+                            <span class="text-slate-400">งบรวมทั้งสิ้น</span>
+                            <p class="text-violet-700 font-bold text-xs">{{ sub_allocated_total|floatformat:2|intcomma }} บาท</p>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Plan Budget Usage -->
+                <div class="pt-3 border-t border-slate-100">
+                    <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-2"><i class="fa-solid fa-chart-pie mr-1"></i> การใช้งบในแผนย่อยนี้</p>
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-100 space-y-2 text-xs">
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">จำนวนโครงการ</span>
+                            <span class="text-slate-700 font-semibold">{{ plan_project_count }} โครงการ</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">งบที่ถูกจัดสรร (ปีปัจจุบัน)</span>
+                            <span class="text-slate-700 font-semibold">{{ plan_projects_total_current|floatformat:2|intcomma }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">งบที่ถูกจัดสรร (เหลื่อมปี)</span>
+                            <span class="text-slate-700 font-semibold">{{ plan_projects_total_carry_over|floatformat:2|intcomma }}</span>
+                        </div>
+                        <div class="flex justify-between pt-1 border-t border-slate-200">
+                            <span class="text-slate-600 font-semibold">จัดสรรไปแล้วรวม</span>
+                            <span class="text-slate-800 font-bold">{{ plan_projects_total|floatformat:2|intcomma }} บาท</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">คงเหลือ (ปีปัจจุบัน)</span>
+                            <span class="{% if plan_remaining_current < 0 %}text-red-600{% else %}text-emerald-600{% endif %} font-semibold">{{ plan_remaining_current|floatformat:2|intcomma }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">คงเหลือ (เหลื่อมปี)</span>
+                            <span class="{% if plan_remaining_carry_over < 0 %}text-red-600{% else %}text-emerald-600{% endif %} font-semibold">{{ plan_remaining_carry_over|floatformat:2|intcomma }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Budget Summary Card -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-4">
+                <h3 class="text-white font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-wallet text-emerald-200"></i> สรุปงบประมาณ
+                </h3>
+            </div>
+            <div class="p-5 space-y-4">
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold mb-1">งบที่ขออนุมัติรวม</p>
+                    <p class="text-slate-800 font-bold text-lg">{{ total_requested|floatformat:2|intcomma }} ฿</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold mb-1">เบิกจ่ายไปแล้ว</p>
+                    <p class="text-red-600 font-bold text-lg">{{ total_disbursed|floatformat:2|intcomma }} ฿</p>
+                </div>
+                <div class="pt-3 border-t border-slate-100">
+                    <p class="text-xs text-slate-500 font-semibold mb-1">คงเหลือรวม</p>
+                    <p class="text-emerald-600 font-bold text-xl">{{ total_remaining|floatformat:2|intcomma }} ฿</p>
+                </div>
+
+                <!-- Breakdown -->
+                <div class="pt-4 mt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                        <p class="text-slate-500 font-semibold mb-1.5"><i class="fa-solid fa-circle text-blue-500 text-[8px] mr-1"></i> ปีปัจจุบัน</p>
+                        <p class="text-slate-600 mb-0.5">อนุมัติ: {{ project.requested_current_budget|floatformat:2|intcomma }}</p>
+                        <p class="text-slate-600 mb-0.5">เบิก: <span class="text-red-500">{{ disbursed_current|floatformat:2|intcomma }}</span></p>
+                        <p class="text-slate-700 font-semibold pt-1 mt-1 border-t border-slate-200/50">เหลือ: <span class="text-emerald-600">{{ remaining_current|floatformat:2|intcomma }}</span></p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                        <p class="text-slate-500 font-semibold mb-1.5"><i class="fa-solid fa-circle text-violet-500 text-[8px] mr-1"></i> เหลื่อมปี</p>
+                        <p class="text-slate-600 mb-0.5">อนุมัติ: {{ project.requested_carry_over_budget|floatformat:2|intcomma }}</p>
+                        <p class="text-slate-600 mb-0.5">เบิก: <span class="text-red-500">{{ disbursed_carry_over|floatformat:2|intcomma }}</span></p>
+                        <p class="text-slate-700 font-semibold pt-1 mt-1 border-t border-slate-200/50">เหลือ: <span class="text-emerald-600">{{ remaining_carry_over|floatformat:2|intcomma }}</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Members and Tasks -->
+    <div class="lg:col-span-2 space-y-6">
+        
+        <!-- Team Members Section -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 class="text-slate-700 font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-users text-blue-500"></i> ทีมงานโครงการ
+                </h3>
+                {% if can_edit %}
+                <a href="{% url 'project_member_add' project.pk %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow transition">
+                    <i class="fa-solid fa-user-plus"></i> เพิ่มทีมงาน
+                </a>
+                {% endif %}
+            </div>
+            <div class="p-5">
+                {% if members %}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {% for member in members %}
+                    <div class="flex items-center justify-between p-3 border border-slate-100 rounded-xl bg-white hover:border-blue-200 transition group">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                                {{ member.user.first_name|first|default:member.user.username|first|upper }}
+                            </div>
+                            <div>
+                                <p class="text-sm font-semibold text-slate-800">{{ member.user.get_full_name|default:member.user.username }}</p>
+                                <p class="text-xs text-slate-500">{{ member.responsibility|default:"-" }} ({{ member.contribution_percent }}%)</p>
+                            </div>
+                        </div>
+                        {% if can_edit %}
+                        <a href="{% url 'project_member_delete' member.pk %}" class="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition p-2">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-6 text-slate-400">
+                    <i class="fa-solid fa-user-group text-3xl mb-2 text-slate-200"></i>
+                    <p class="text-sm">ยังไม่มีทีมงานในโครงการนี้</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Activities / Tasks Section -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 class="text-slate-700 font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-blue-500"></i> กิจกรรมและการเบิกจ่าย
+                </h3>
+                <div class="flex items-center gap-2">
+                    <a href="{% url 'project_task_board' project.pk %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold rounded-lg shadow transition">
+                        <i class="fa-solid fa-kanban"></i> ไปที่กระดานกิจกรรม
+                    </a>
+                </div>
+            </div>
+            
+            {% if task_groups %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-100">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-16">ลำดับ</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ชื่อหัวข้อหลักกิจกรรม</th>
+                            <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">งบประมาณ</th>
+                            <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">เบิกจ่าย/คงเหลือ</th>
+                            <th class="px-5 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider w-28">กิจกรรม</th>
+                            {% if can_edit %}
+                            <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider w-20">จัดการ</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-slate-100">
+                        {% for group in task_groups %}
+                        <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="document.getElementById('tasks-{{ group.pk }}').classList.toggle('hidden'); this.querySelector('.fa-chevron-down').classList.toggle('rotate-180');">
+                            <td class="px-5 py-3.5 text-center text-sm text-slate-500 font-medium">
+                                {{ forloop.counter }}
+                            </td>
+                            <td class="px-5 py-3.5">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm font-bold text-slate-800">{{ group.name }}</p>
+                                        {% if group.start_date %}
+                                        <p class="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
+                                            <span><i class="fa-regular fa-calendar mr-1"></i>{{ group.start_date|date:"d/m/Y" }}{% if group.end_date %} - {{ group.end_date|date:"d/m/Y" }}{% endif %}</span>
+                                            {% if group.days_overdue > 0 %}
+                                            <span class="text-red-500 font-semibold bg-red-50 px-1.5 py-0.5 rounded border border-red-100">เกินกำหนด {{ group.days_overdue }} วัน</span>
+                                            {% elif group.days_remaining > 0 %}
+                                            <span class="text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">เหลือ {{ group.days_remaining }} วัน</span>
+                                            {% else %}
+                                            <span class="text-emerald-500 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">ครบกำหนดวันนี้</span>
+                                            {% endif %}
+                                        </p>
+                                        {% endif %}
+                                    </div>
+                                    <i class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform duration-200"></i>
+                                </div>
+                            </td>
+                            <td class="px-5 py-3.5 text-right text-sm">
+                                {% if group.allocated_budget > 0 %}
+                                <span class="font-semibold text-slate-700">{{ group.allocated_budget|floatformat:2|intcomma }}</span>
+                                {% else %}
+                                <span class="text-slate-300">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-5 py-3.5 text-right text-xs">
+                                {% if group.allocated_budget > 0 %}
+                                <div>
+                                    <span class="text-amber-600 font-semibold">{{ group.disbursed_amount|floatformat:2|intcomma }}</span>
+                                    <span class="text-slate-300 mx-0.5">/</span>
+                                    <span class="{% if group.remaining_budget < 0 %}text-red-600{% else %}text-emerald-600{% endif %} font-semibold">{{ group.remaining_budget|floatformat:2|intcomma }}</span>
+                                </div>
+                                <!-- Mini progress bar -->
+                                <div class="w-full bg-slate-100 rounded-full h-1 mt-1">
+                                    <div class="h-1 rounded-full {% if group.budget_usage_percent > 90 %}bg-red-400{% elif group.budget_usage_percent > 70 %}bg-amber-400{% else %}bg-emerald-400{% endif %}" style="width: {{ group.budget_usage_percent }}%"></div>
+                                </div>
+                                {% else %}
+                                <span class="text-slate-300">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-5 py-3.5 text-center text-sm font-semibold text-slate-600">
+                                {{ group.tasks.count }}
+                            </td>
+                            {% if can_edit %}
+                            <td class="px-5 py-3.5 text-right font-medium text-sm">
+                                <form method="post" action="{% url 'task_group_delete' group.pk %}" class="inline" onsubmit="event.stopPropagation(); return confirm('ยืนยันการลบหัวข้อนี้? กิจกรรมย่อยจะถูกยกเลิกการจัดกลุ่ม');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-red-400 hover:text-red-600 transition p-2"><i class="fa-solid fa-trash-can"></i></button>
+                                </form>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        <!-- Hidden Sub-tasks Row -->
+                        <tr id="tasks-{{ group.pk }}" class="hidden bg-slate-50/50 border-t-0">
+                            <td colspan="{% if can_edit %}6{% else %}5{% endif %}" class="px-5 py-4 pt-0">
+                                {% if group.tasks.exists %}
+                                <div class="pl-14 space-y-2 border-l-2 border-blue-200 ml-5 py-2">
+                                    {% for task in group.tasks.all %}
+                                    <div class="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                                        <div>
+                                            <div class="flex items-center gap-2">
+                                                <p class="text-sm font-semibold text-slate-700">{{ task.task_name }}</p>
+                                                {% if task.tags.exists %}
+                                                <div class="flex flex-wrap gap-1">
+                                                    {% for tag in task.tags.all %}
+                                                    <span class="px-1.5 py-0.5 rounded text-[9px] font-medium {{ tag.color }}">{{ tag.name }}</span>
+                                                    {% endfor %}
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                                                {% if task.is_completed %}
+                                                <span class="text-emerald-500"><i class="fa-solid fa-check"></i> เสร็จสิ้น</span>
+                                                {% else %}
+                                                <span class="text-orange-400"><i class="fa-regular fa-clock"></i> กำลังทำ</span>
+                                                {% endif %}
+                                                {% if task.start_date or task.end_date %}
+                                                <span class="text-slate-400 flex items-center gap-1">
+                                                    <i class="fa-regular fa-calendar"></i>
+                                                    {{ task.start_date|date:"d/m/y"|default:"?" }} - {{ task.end_date|date:"d/m/y"|default:"?" }}
+                                                </span>
+                                                {% if task.days_overdue > 0 %}
+                                                <span class="text-red-500 font-semibold bg-red-50 px-1.5 py-0.5 rounded text-[10px] border border-red-100">เกินกำหนด {{ task.days_overdue }} วัน</span>
+                                                {% elif task.days_remaining > 0 %}
+                                                <span class="text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded text-[10px] border border-blue-100">เหลือ {{ task.days_remaining }} วัน</span>
+                                                {% else %}
+                                                <span class="text-emerald-500 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px] border border-emerald-100">ครบกำหนดวันนี้</span>
+                                                {% endif %}
+                                                {% endif %}
+                                                <span title="ไฟล์แนบ"><i class="fa-solid fa-paperclip"></i> {{ task.attachments.count }}</span>
+                                                <span title="ความคิดเห็น"><i class="fa-regular fa-comment"></i> {{ task.comments.count }}</span>
+                                                {% if task.amount > 0 %}
+                                                <span class="font-semibold text-slate-600">{{ task.amount|floatformat:2|intcomma }} บาท</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <a href="{% url 'project_task_edit' task.pk %}" class="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition shrink-0 whitespace-nowrap">รายละเอียด</a>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                <p class="text-xs text-slate-400 pl-14 ml-5 py-2 italic border-l-2 border-slate-200">ไม่มีกิจกรรมย่อยในหัวข้อนี้</p>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-12 text-slate-400">
+                <i class="fa-solid fa-layer-group text-4xl mb-3 text-slate-200"></i>
+                <p class="text-sm">ยังไม่มีหัวข้อหลักกิจกรรม</p>
+                <a href="{% url 'project_task_board' project.pk %}" class="text-blue-600 font-semibold text-sm hover:underline mt-2 inline-block">ไปที่กระดานเพื่อสร้างหัวข้อหลัก</a>
+            </div>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+{% endblock %}

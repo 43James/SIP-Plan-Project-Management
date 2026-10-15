@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_DATABASE: sip_plan_db
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: sip_user
+      MYSQL_PASSWORD: sippassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  web:
+    build: .
+    restart: always
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn --bind 0.0.0.0:8000 core.wsgi:application"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_NAME=sip_plan_db
+      - DB_USER=sip_user
+      - DB_PASSWORD=sippassword
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DJANGO_SECRET_KEY=dev-secret-key-replace-in-prod
+      - DJANGO_DEBUG=True
+      - DJANGO_ALLOWED_HOSTS=*
+    depends_on:
+      - db
+
+volumes:
+  mysql_data:

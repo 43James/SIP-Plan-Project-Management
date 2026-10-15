@@ -1,0 +1,37 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="th" class="h-full">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เข้าสู่ระบบไม่สำเร็จ - SIP-Plan</title>
+    {% include "includes/head_assets.html" %}
+    <style>
+        body { background: linear-gradient(160deg, #f6f9fd 0%, #eef4fb 45%, #e6eff9 100%); }
+    </style>
+</head>
+
+<body class="h-full flex items-center justify-center p-4">
+    {% comment %}
+    หน้านี้เป็นตาข่ายรองกรณีที่ OAuth ล้มจริง ๆ เช่น ผู้ใช้กดยกเลิกที่หน้าจอ
+    ของ Google, state หมดอายุ หรือ Google ขัดข้อง
+    กรณีอีเมลนอกโดเมนจะไม่มาถึงหน้านี้ เพราะ adapter เด้งกลับหน้า login
+    พร้อมข้อความภาษาไทยไปก่อนแล้ว
+    {% endcomment %}
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-lg p-8 text-center">
+        <div class="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+            <i class="fa-solid fa-triangle-exclamation text-red-500 text-xl"></i>
+        </div>
+        <h1 class="text-xl font-bold text-slate-800">เข้าสู่ระบบด้วย Google ไม่สำเร็จ</h1>
+        <p class="text-slate-500 text-sm mt-2.5 leading-relaxed">
+            การเชื่อมต่อกับ Google ถูกยกเลิกหรือหมดอายุ<br>
+            กรุณาลองใหม่อีกครั้ง หากยังไม่สำเร็จให้ติดต่อผู้ดูแลระบบ
+        </p>
+        <a href="{% url 'login' %}"
+           class="inline-block mt-6 px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold shadow transition">
+            <i class="fa-solid fa-arrow-left mr-1.5"></i> กลับไปหน้าเข้าสู่ระบบ
+        </a>
+    </div>
+</body>
+</html>

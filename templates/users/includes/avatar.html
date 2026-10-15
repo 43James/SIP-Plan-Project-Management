@@ -1,0 +1,27 @@
+{% comment %} ===================================================================
+   รูปประจำตัวผู้ใช้ พร้อม fallback เป็นตัวอักษรย่อเมื่อยังไม่มีรูป
+
+   ตัวแปรที่ต้องส่งมา:
+     avatar_user   - object User
+     avatar_size   - คลาสความกว้าง/สูง เช่น 'w-9 h-9'
+     avatar_radius - ความโค้งมุม เช่น 'rounded-full' หรือ 'rounded-2xl'
+     avatar_text   - ขนาดตัวอักษรของ fallback เช่น 'text-sm'
+     avatar_bg     - (ไม่บังคับ) คลาสพื้นหลังของ fallback
+
+   ตัวอย่าง:
+     (ดูตัวอย่างการเรียกใช้ได้จากไฟล์ที่ include ไฟล์นี้)
+
+   หมายเหตุ: avatar_user.profile.photo_thumb ปลอดภัยแม้ผู้ใช้ยังไม่มีแถว
+   UserProfile เพราะ Django ตั้ง silent_variable_failure ให้ ObjectDoesNotExist
+   จึงได้ค่าว่างแทนที่จะ error
+   =================================================================== {% endcomment %}
+{% if avatar_user.profile.photo_thumb %}
+<img src="{% url 'user_photo' avatar_user.pk %}?size=thumb"
+     alt="รูปประจำตัวของ {{ avatar_user.get_full_name|default:avatar_user.username }}"
+     loading="lazy"
+     class="{{ avatar_size }} {{ avatar_radius }} object-cover flex-shrink-0 bg-slate-200">
+{% else %}
+<div class="{{ avatar_size }} {{ avatar_radius }} {{ avatar_bg|default:'bg-gradient-to-br from-blue-500 to-blue-800' }} flex items-center justify-center text-white font-bold {{ avatar_text }} flex-shrink-0">
+    {{ avatar_user.get_full_name|default:avatar_user.username|make_list|first|upper }}
+</div>
+{% endif %}

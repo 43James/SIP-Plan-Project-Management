@@ -1,0 +1,461 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="th" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SIP-Plan Project Management{% endblock %}</title>
+    {% include "includes/head_assets.html" %}
+    <!-- Tom Select (Searchable Dropdown) -->
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+    <style>
+        .sidebar-link { transition: all 0.2s ease; }
+        .sidebar-link:hover { background: rgba(255,255,255,0.08); padding-left: 1.5rem; }
+        .sidebar-link.active { background: rgba(26,110,193,0.25); border-left: 3px solid #1a6ec1; }
+        .card-hover { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .card-hover:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,0.10); }
+        .progress-bar { background: linear-gradient(90deg, #1a6ec1, #1052a0); border-radius: 9999px; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; }
+        .badge { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 9999px; font-size: 0.72rem; font-weight: 600; }
+
+        /* ===== Tom Select Custom Theme (Blue/White) ===== */
+        .ts-wrapper { width: 100%; }
+        .ts-control {
+            font-family: 'IBM Plex Sans Thai', sans-serif !important;
+            font-size: 0.875rem !important;
+            padding: 0.625rem 1rem !important;
+            border-radius: 0.75rem !important;
+            border: 1px solid #e2e8f0 !important;
+            background: #f8fafc !important;
+            color: #1e293b !important;
+            box-shadow: none !important;
+            transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s !important;
+        }
+        .ts-control.ts-filled {
+            border-color: #10b981 !important;
+            background-color: rgba(236, 253, 245, 0.5) !important;
+        }
+        .ts-control:focus-within, .ts-wrapper.focus .ts-control {
+            border-color: #1a6ec1 !important;
+            box-shadow: 0 0 0 3px rgba(26,110,193,0.12) !important;
+            background: #fff !important;
+        }
+        .ts-dropdown {
+            font-family: 'IBM Plex Sans Thai', sans-serif !important;
+            font-size: 0.875rem !important;
+            border-radius: 0.75rem !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.10) !important;
+            margin-top: 4px !important;
+            overflow: hidden !important;
+        }
+        .ts-dropdown .ts-dropdown-content { padding: 4px !important; }
+        .ts-dropdown .option {
+            border-radius: 0.5rem !important;
+            padding: 0.5rem 0.75rem !important;
+            color: #334155 !important;
+        }
+        .ts-dropdown .option:hover, .ts-dropdown .option.active {
+            background: #eff6ff !important;
+            color: #1460ab !important;
+        }
+        .ts-dropdown .option.selected {
+            background: #dbeafe !important;
+            color: #1460ab !important;
+            font-weight: 600 !important;
+        }
+        /* Search input inside dropdown */
+        .ts-dropdown .ts-dropdown-content input {
+            font-family: 'IBM Plex Sans Thai', sans-serif !important;
+        }
+        .ts-wrapper .ts-control .ts-input-wrapper input {
+            font-family: 'IBM Plex Sans Thai', sans-serif !important;
+            font-size: 0.875rem !important;
+        }
+    </style>
+</head>
+<body class="h-full bg-slate-50 overflow-hidden">
+
+<div class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-64 flex-shrink-0 flex flex-col overflow-y-auto" style="background:#0f1f3d;">
+
+        <!-- Logo -->
+        <a href="{% url 'dashboard' %}" class="flex items-center gap-3 px-5 py-5 border-b border-white/10 hover:bg-white/5 transition duration-150">
+            <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center flex-shrink-0 p-1 shadow-sm overflow-hidden">
+                <img src="{% static 'images/logo.png' %}" alt="SIP Logo" class="w-full h-full object-contain">
+            </div>
+            <div>
+                <p class="text-white font-bold text-sm leading-tight">SIP-Plan</p>
+                <p class="text-blue-300 text-xs">Project Management</p>
+            </div>
+        </a>
+
+        <!-- User Info -->
+        <div class="px-4 py-4 border-b border-white/10">
+            <div class="flex items-center gap-3">
+                {% include 'users/includes/avatar.html' with avatar_user=user avatar_size='w-9 h-9' avatar_radius='rounded-full' avatar_text='text-sm' avatar_bg='bg-blue-600' %}
+                <div class="overflow-hidden">
+                    <p class="text-white text-sm font-semibold truncate">{{ user.get_full_name|default:user.username }}</p>
+                    <p class="text-blue-300 text-xs truncate">{{ user.department|default:"ไม่ระบุแผนก" }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 py-4 overflow-y-auto space-y-1 px-3">
+            <p class="text-blue-400 text-xs font-semibold uppercase px-2 mb-2 tracking-widest">เมนูหลัก</p>
+
+            <a href="{% url 'dashboard' %}" class="sidebar-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %} flex items-center gap-3 px-3 py-2.5 rounded-lg text-blue-100 text-sm">
+                <i class="fa-solid fa-chart-pie w-4 text-center"></i> ภาพรวม (Dashboard)
+            </a>
+            {% if user.is_budget_officer or user.is_executive or user.is_staff %}
+            <a href="{% url 'plan_list' %}" class="sidebar-link {% if request.resolver_match.url_name == 'plan_list' %}active{% endif %} flex items-center gap-3 px-3 py-2.5 rounded-lg text-blue-100 text-sm">
+                <i class="fa-solid fa-sitemap w-4 text-center"></i> จัดการแผนงาน
+            </a>
+            {% endif %}
+            <a href="{% url 'project_list' %}" class="sidebar-link {% if 'project' in request.resolver_match.url_name and request.resolver_match.url_name != 'my_project_list' %}active{% endif %} flex items-center gap-3 px-3 py-2.5 rounded-lg text-blue-100 text-sm">
+                <i class="fa-solid fa-list-check w-4 text-center"></i> โครงการ/กิจกรรมทั้งหมด
+            </a>
+            <a href="{% url 'my_project_list' %}" class="sidebar-link {% if request.resolver_match.url_name == 'my_project_list' %}active{% endif %} flex items-center gap-3 px-3 py-2.5 rounded-lg text-blue-100 text-sm">
+                <i class="fa-solid fa-bookmark w-4 text-center"></i> โครงการ/กิจกรรมของฉัน
+            </a>
+
+            {% if user.is_staff or user.is_executive %}
+            <p class="text-blue-400 text-xs font-semibold uppercase px-2 mt-5 mb-2 tracking-widest">จัดการระบบ</p>
+            <a href="{% url 'user_management' %}" class="sidebar-link {% if request.resolver_match.url_name == 'user_management' %}active{% endif %} flex items-center gap-3 px-3 py-2.5 rounded-lg text-blue-100 text-sm">
+                <i class="fa-solid fa-users-gear w-4 text-center"></i> จัดการสิทธิ์ผู้ใช้งาน
+            </a>
+            <a href="{% url 'admin:index' %}" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-blue-100 text-sm" target="_blank">
+                <i class="fa-solid fa-shield-halved w-4 text-center"></i> หน้าจอแอดมิน
+            </a>
+            {% endif %}
+        </nav>
+
+        <!-- Bottom: Profile & Logout -->
+        <div class="p-3 border-t border-white/10 space-y-1">
+            <a href="{% url 'profile' %}" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-blue-100 text-sm">
+                <i class="fa-solid fa-circle-user w-4 text-center"></i> ข้อมูลส่วนตัว
+            </a>
+            <form method="post" action="{% url 'logout' %}" data-no-confirm>
+                {% csrf_token %}
+                <button type="submit" class="w-full sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-300 hover:text-red-200 text-sm">
+                    <i class="fa-solid fa-right-from-bracket w-4 text-center"></i> ออกจากระบบ
+                </button>
+            </form>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+
+        <!-- Top Bar -->
+        <header class="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between flex-shrink-0 shadow-sm">
+            <div>
+                <h2 class="text-slate-800 font-semibold text-base">{% block page_title %}SIP-Plan{% endblock %}</h2>
+                <p class="text-slate-400 text-xs">{% block page_subtitle %}อุทยานวิทยาศาสตร์และนวัตกรรม{% endblock %}</p>
+            </div>
+            <div class="flex items-center gap-2">
+                {% if user.is_executive %}<span class="badge bg-purple-100 text-purple-700"><i class="fa-solid fa-crown mr-1 text-xs"></i>Executive</span>{% endif %}
+                {% if user.is_budget_officer %}<span class="badge bg-blue-100 text-blue-700"><i class="fa-solid fa-coins mr-1 text-xs"></i>Budget Officer</span>{% endif %}
+                {% if user.is_finance_officer %}<span class="badge bg-green-100 text-green-700"><i class="fa-solid fa-file-invoice-dollar mr-1 text-xs"></i>Finance</span>{% endif %}
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 overflow-y-auto p-6">
+
+            {% if messages %}
+            <!-- Toast Notifications -->
+            <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2" style="max-width:380px;">
+                {% for message in messages %}
+                <div class="toast-item flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg backdrop-blur-sm
+                    {% if message.tags == 'error' %}bg-red-600 text-white
+                    {% elif message.tags == 'success' %}bg-emerald-600 text-white
+                    {% else %}bg-blue-600 text-white{% endif %}
+                    transform translate-x-full opacity-0 transition-all duration-300 ease-out">
+                    <i class="fa-solid {% if message.tags == 'error' %}fa-circle-xmark{% elif message.tags == 'success' %}fa-circle-check{% else %}fa-circle-info{% endif %} text-white/80 flex-shrink-0"></i>
+                    <span class="flex-1">{{ message }}</span>
+                    <button onclick="this.parentElement.classList.add('translate-x-full','opacity-0');setTimeout(()=>this.parentElement.remove(),300)" class="text-white/60 hover:text-white ml-1 flex-shrink-0">
+                        <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const toasts = document.querySelectorAll('.toast-item');
+                    toasts.forEach((toast, i) => {
+                        // Slide in with stagger
+                        setTimeout(() => {
+                            toast.classList.remove('translate-x-full', 'opacity-0');
+                        }, 100 + i * 150);
+                        // Auto dismiss after 4 seconds
+                        setTimeout(() => {
+                            toast.classList.add('translate-x-full', 'opacity-0');
+                            setTimeout(() => toast.remove(), 300);
+                        }, 4000 + i * 500);
+                    });
+                });
+            </script>
+            {% endif %}
+
+            {% block content %}{% endblock %}
+
+        </main>
+    </div>
+</div>
+
+<!-- ===================== CONFIRMATION MODAL ===================== -->
+<div id="confirm-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4" style="background:rgba(15,31,61,0.55); backdrop-filter:blur(4px);">
+    <div id="confirm-box" class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-95 opacity-0 transition-all duration-200">
+        <!-- Icon -->
+        <div class="flex justify-center mb-4">
+            <div class="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center">
+                <i class="fa-solid fa-floppy-disk text-blue-600 text-2xl"></i>
+            </div>
+        </div>
+        <!-- Text -->
+        <h3 class="text-center text-slate-800 font-bold text-lg mb-1">ยืนยันการบันทึก</h3>
+        <p class="text-center text-slate-500 text-sm mb-6">คุณต้องการบันทึกข้อมูลนี้ใช่หรือไม่?</p>
+        <!-- Buttons -->
+        <div class="flex gap-3">
+            <button id="confirm-cancel" class="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition">
+                <i class="fa-solid fa-xmark mr-1"></i> ยกเลิก
+            </button>
+            <button id="confirm-ok" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold shadow transition">
+                <i class="fa-solid fa-check mr-1"></i> ยืนยัน
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== LOADING OVERLAY ===================== -->
+<div id="loading-overlay" class="fixed inset-0 z-50 hidden items-center justify-center" style="background:rgba(15,31,61,0.60); backdrop-filter:blur(4px);">
+    <div class="bg-white rounded-2xl shadow-2xl px-10 py-8 flex flex-col items-center gap-4">
+        <!-- Spinner -->
+        <div class="relative w-14 h-14">
+            <div class="absolute inset-0 rounded-full border-4 border-blue-100"></div>
+            <div class="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-600 animate-spin"></div>
+            <div class="absolute inset-0 flex items-center justify-center">
+                <i class="fa-solid fa-flask text-blue-500 text-lg"></i>
+            </div>
+        </div>
+        <div class="text-center">
+            <p class="text-slate-800 font-bold text-sm">กำลังบันทึกข้อมูล...</p>
+            <p class="text-slate-400 text-xs mt-1">โปรดรอสักครู่</p>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== TOM SELECT AUTO-INIT ===================== -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('select').forEach(function (el) {
+        if (el.tomselect) return;
+
+        const placeholder = el.querySelector('option[value=""]')?.textContent?.trim() || 'เลือกรายการ...';
+
+        // ตรวจว่า select นี้มี onchange="this.form.submit()" หรือไม่
+        const onchangeAttr = el.getAttribute('onchange') || '';
+        const shouldAutoSubmit = onchangeAttr.includes('form.submit');
+
+        // ลบ onchange ออกก่อนเพื่อไม่ให้ชนกับ Tom Select
+        if (shouldAutoSubmit) {
+            el.removeAttribute('onchange');
+        }
+
+        new TomSelect(el, {
+            allowEmptyOption: true,
+            placeholder: placeholder,
+            searchField: ['text'],
+            maxOptions: 300,
+            plugins: [],
+            render: {
+                no_results: function () {
+                    return '<div style="padding:10px 12px; color:#94a3b8; font-size:0.85rem;">ไม่พบข้อมูลที่ค้นหา</div>';
+                },
+                option: function (data) {
+                    return '<div>' + data.text + '</div>';
+                },
+            },
+            onChange: function (value) {
+                // Highlight if filled
+                if (value && value.length > 0) {
+                    this.control.classList.add('ts-filled');
+                } else {
+                    this.control.classList.remove('ts-filled');
+                }
+
+                // ถ้า select นี้ต้อง auto-submit → ส่งฟอร์มอัตโนมัติเมื่อเลือก
+                if (shouldAutoSubmit) {
+                    const form = el.closest('form');
+                    if (form) form.submit();
+                }
+            },
+            onInitialize: function () {
+                const input = this.control.querySelector('input');
+                if (input) {
+                    input.style.fontFamily = "'IBM Plex Sans Thai', sans-serif";
+                    input.style.fontSize = '0.875rem';
+                }
+                // Initial check for filled state
+                const value = this.getValue();
+                if (value && value.length > 0) {
+                    this.control.classList.add('ts-filled');
+                }
+            }
+        });
+    });
+});
+</script>
+
+<script>
+// ===================== HIGHLIGHT FILLED INPUTS =====================
+document.addEventListener('DOMContentLoaded', function () {
+    function updateFieldStatus(el) {
+        // Skip hidden, checkbox, radio
+        if (el.type === 'hidden' || el.type === 'checkbox' || el.type === 'radio') return;
+        // Only target inputs that already have borders
+        if (!el.classList.contains('border')) return;
+
+        const hasValue = el.value && el.value.trim() !== '';
+        
+        if (hasValue) {
+            el.classList.remove('border-slate-200');
+            el.classList.add('border-emerald-500', 'bg-emerald-50/30');
+        } else {
+            el.classList.remove('border-emerald-500', 'bg-emerald-50/30');
+            el.classList.add('border-slate-200');
+        }
+    }
+
+    const inputs = document.querySelectorAll('input, textarea');
+    inputs.forEach(input => {
+        // Delay initial check slightly to allow browser autofill
+        setTimeout(() => updateFieldStatus(input), 100);
+        
+        input.addEventListener('input', () => updateFieldStatus(input));
+        input.addEventListener('change', () => updateFieldStatus(input));
+    });
+});
+</script>
+
+<script>
+(function () {
+    // ---- Helper: show/hide modal ----
+    function showModal(el) {
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+        // Animate box in
+        const box = el.querySelector('#confirm-box');
+        if (box) {
+            requestAnimationFrame(() => {
+                box.classList.remove('scale-95', 'opacity-0');
+                box.classList.add('scale-100', 'opacity-100');
+            });
+        }
+    }
+    function hideModal(el) {
+        const box = el.querySelector('#confirm-box');
+        if (box) {
+            box.classList.remove('scale-100', 'opacity-100');
+            box.classList.add('scale-95', 'opacity-0');
+        }
+        setTimeout(() => {
+            el.classList.add('hidden');
+            el.classList.remove('flex');
+        }, 180);
+    }
+
+    function showLoading() {
+        const ov = document.getElementById('loading-overlay');
+        ov.classList.remove('hidden');
+        ov.classList.add('flex');
+    }
+
+    // ---- Intercept all submit buttons with class "btn-save" OR any [type=submit] inside a form ----
+    const modal = document.getElementById('confirm-modal');
+    const confirmOk = document.getElementById('confirm-ok');
+    const confirmCancel = document.getElementById('confirm-cancel');
+
+    let pendingForm = null;
+    let pendingButton = null;
+
+    document.addEventListener('click', function (e) {
+        // Find the closest submit button
+        const btn = e.target.closest('button[type="submit"], input[type="submit"]');
+        if (!btn) return;
+
+        // Exclude: logout form (small utility), and buttons with data-no-confirm
+        const form = btn.closest('form');
+        if (!form) return;
+        if (btn.dataset.noConfirm !== undefined) return;
+        if (form.dataset.noConfirm !== undefined) return;
+
+        // Check HTML5 validity first
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        // Prevent immediate submit
+        e.preventDefault();
+
+        // Update modal text if btn has custom label
+        const label = btn.dataset.confirmLabel || 'คุณต้องการบันทึกข้อมูลนี้ใช่หรือไม่?';
+        modal.querySelector('p').textContent = label;
+
+        pendingForm = form;
+        pendingButton = btn;
+        showModal(modal);
+    });
+
+    // User clicked "ยืนยัน"
+    confirmOk.addEventListener('click', function () {
+        hideModal(modal);
+        if (pendingForm) {
+            setTimeout(() => {
+                showLoading();
+                // Disable button to prevent double submit
+                if (pendingButton) pendingButton.disabled = true;
+                pendingForm.submit();
+                pendingForm = null;
+                pendingButton = null;
+            }, 200);
+        }
+    });
+
+    // User clicked "ยกเลิก"
+    confirmCancel.addEventListener('click', function () {
+        hideModal(modal);
+        pendingForm = null;
+        pendingButton = null;
+    });
+
+    // Close modal on backdrop click
+    modal.addEventListener('click', function (e) {
+        if (e.target === modal) {
+            hideModal(modal);
+            pendingForm = null;
+            pendingButton = null;
+        }
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+            hideModal(modal);
+            pendingForm = null;
+            pendingButton = null;
+        }
+    });
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,715 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}{% if object %}แก้ไขกิจกรรม{% else %}เพิ่มกิจกรรม{% endif %} - SIP-Plan{% endblock %}
+{% block page_title %}{% if object %}แก้ไขกิจกรรม{% else %}เพิ่มกิจกรรมใหม่{% endif %}{% endblock %}
+{% block page_subtitle %}{{ project.project_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+    <div class="mb-4">
+        <a href="{% url 'project_detail' project.pk %}" class="inline-flex items-center gap-2 text-slate-500 hover:text-blue-600 transition font-semibold text-sm">
+            <i class="fa-solid fa-arrow-left"></i> กลับไปหน้ารายละเอียดโครงการ
+        </a>
+    </div>
+
+    <!-- ==================== MAIN FORM ==================== -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="bg-gradient-to-r from-blue-800 to-blue-900 px-6 py-4 flex items-center justify-between">
+            <h3 class="text-white font-bold flex items-center gap-2">
+                <i class="fa-solid fa-list-check text-blue-300"></i> {% if object %}แก้ไขกิจกรรม / การเบิกจ่าย{% else %}เพิ่มกิจกรรม / การเบิกจ่าย{% endif %}
+            </h3>
+            {% if object %}
+            <a href="{% url 'project_task_delete' object.pk %}" class="text-white/70 hover:text-red-400 bg-white/10 hover:bg-white/20 w-8 h-8 flex items-center justify-center rounded-lg transition" title="ลบกิจกรรมนี้">
+                <i class="fa-solid fa-trash-can"></i>
+            </a>
+            {% endif %}
+        </div>
+        <form method="post" class="p-6 space-y-5">
+            {% csrf_token %}
+
+            {% if form.errors %}
+            <div class="flex gap-3 p-4 rounded-xl bg-red-50 border border-red-200">
+                <i class="fa-solid fa-circle-exclamation text-red-500 mt-0.5 flex-shrink-0"></i>
+                <div>
+                    <p class="text-red-700 font-semibold text-sm">พบข้อผิดพลาด:</p>
+                    <ul class="mt-1 space-y-0.5">
+                        {% for field in form %}
+                            {% for error in field.errors %}
+                            <li class="text-red-600 text-xs">• <strong>{{ field.label }}:</strong> {{ error }}</li>
+                            {% endfor %}
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="grid grid-cols-1 gap-5">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">หัวข้อหลัก / กลุ่มกิจกรรม <span class="text-slate-400 font-normal text-xs">(เลือกเพื่อให้แสดงบนกระดานได้อย่างถูกต้อง)</span></label>
+                    {{ form.task_group }}
+                    <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-circle-info mr-1"></i> หากไม่มีหัวข้อให้เลือก กรุณาสร้างหัวข้อในหน้า "กระดานกิจกรรม" ก่อน</p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">รายละเอียดกิจกรรม <span class="text-red-500">*</span></label>
+                    {{ form.task_name }}
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">ผู้รับผิดชอบ <span class="text-slate-400 font-normal text-xs">(คลิกเพื่อเลือก สามารถเลือกได้หลายคน)</span></label>
+                    <div class="flex flex-wrap gap-3">
+                        {% for checkbox in form.assignees %}
+                        <label class="cursor-pointer group relative">
+                            {{ checkbox.tag }}
+                            <div class="flex flex-col items-center justify-center p-2 rounded-xl border-2 border-slate-100 hover:border-blue-200 peer-checked:border-blue-500 peer-checked:bg-blue-50 bg-white transition-all w-20 h-20 shadow-sm peer-checked:shadow-md">
+                                <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold {% if checkbox.choice_label|first == 'a' %}bg-amber-100 text-amber-600{% elif checkbox.choice_label|first == 'b' %}bg-emerald-100 text-emerald-600{% else %}bg-blue-100 text-blue-600{% endif %} mb-1.5">
+                                    {{ checkbox.choice_label|slice:":1"|upper }}
+                                </div>
+                                <span class="text-[10px] text-center font-medium text-slate-600 truncate w-full px-1">{{ checkbox.choice_label }}</span>
+                                <i class="fa-solid fa-circle-check text-blue-600 absolute top-1.5 right-1.5 text-xs opacity-0 peer-checked:opacity-100 transition-opacity"></i>
+                            </div>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <!-- TAGS UI -->
+                <div class="mt-5 relative" id="task-tags-container">
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">แท็ก</label>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" id="btn-add-tag" class="w-8 h-8 rounded border border-blue-200 bg-blue-50 text-blue-500 hover:bg-blue-100 flex items-center justify-center transition">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                        </button>
+                        <div id="selected-tags-display" class="flex flex-wrap gap-2">
+                            <!-- JS will populate selected tags here as badges -->
+                        </div>
+                    </div>
+                    
+                    <!-- Hidden Select for form submission -->
+                    <div class="hidden">
+                        {{ form.tags }}
+                    </div>
+                    
+                    <!-- Tags Dropdown Modal -->
+                    <div id="tags-dropdown" class="hidden absolute left-0 mt-2 w-64 bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-slate-200 z-[60]">
+                        <div class="p-3 border-b border-slate-100 flex justify-between items-center">
+                            <h4 class="text-sm font-semibold text-slate-700">แท็ก</h4>
+                            <button type="button" id="btn-close-dropdown" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        
+                        <div class="p-2 max-h-60 overflow-y-auto" id="tags-list">
+                            {% for tag in form.tags.field.queryset %}
+                            <div class="tag-item flex items-center justify-between mb-1 group p-1 rounded" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}" data-tag-color="{{ tag.color }}">
+                                <div class="tag-label-click flex-1 px-3 py-1.5 rounded {{ tag.color }} text-sm font-medium relative cursor-pointer">
+                                    {{ tag.name }}
+                                    <i class="fa-solid fa-check absolute right-2 top-1/2 -translate-y-1/2 hidden tag-check-icon text-white/90"></i>
+                                </div>
+                                <div class="flex gap-2 ml-2 opacity-0 group-hover:opacity-100 transition">
+                                    <button type="button" class="btn-edit-tag text-slate-400 hover:text-blue-500"><i class="fa-solid fa-pen text-xs"></i></button>
+                                    <button type="button" class="btn-delete-tag text-slate-400 hover:text-red-500"><i class="fa-solid fa-trash text-xs"></i></button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        
+                        <div class="p-2 border-t border-slate-100">
+                            <!-- Create New Tag Form (hidden by default) -->
+                            <div id="create-tag-form" class="hidden">
+                                <input type="hidden" id="edit-tag-id" value="">
+                                <input type="text" id="new-tag-name" class="w-full px-2 py-1.5 border border-slate-200 rounded text-sm mb-2 focus:border-blue-500 focus:outline-none" placeholder="ชื่อแท็กใหม่...">
+                                <div class="flex gap-1.5 mb-3 flex-wrap">
+                                    <button type="button" class="color-picker-btn w-6 h-6 rounded bg-emerald-500 hover:ring-2 ring-offset-1 ring-emerald-500 transition" data-color="bg-emerald-500 text-white"></button>
+                                    <button type="button" class="color-picker-btn w-6 h-6 rounded bg-amber-400 hover:ring-2 ring-offset-1 ring-amber-400 transition" data-color="bg-amber-400 text-white"></button>
+                                    <button type="button" class="color-picker-btn w-6 h-6 rounded bg-orange-500 hover:ring-2 ring-offset-1 ring-orange-500 transition" data-color="bg-orange-500 text-white"></button>
+                                    <button type="button" class="color-picker-btn w-6 h-6 rounded bg-red-500 hover:ring-2 ring-offset-1 ring-red-500 transition" data-color="bg-red-500 text-white"></button>
+                                    <button type="button" class="color-picker-btn w-6 h-6 rounded bg-blue-500 hover:ring-2 ring-offset-1 ring-blue-500 transition" data-color="bg-blue-500 text-white"></button>
+                                    <button type="button" class="color-picker-btn w-6 h-6 rounded bg-purple-500 hover:ring-2 ring-offset-1 ring-purple-500 transition" data-color="bg-purple-500 text-white"></button>
+                                    <button type="button" class="color-picker-btn w-6 h-6 rounded bg-pink-500 hover:ring-2 ring-offset-1 ring-pink-500 transition" data-color="bg-pink-500 text-white"></button>
+                                    <button type="button" class="color-picker-btn w-6 h-6 rounded bg-slate-500 hover:ring-2 ring-offset-1 ring-slate-500 transition" data-color="bg-slate-500 text-white"></button>
+                                </div>
+                                <div class="flex justify-end gap-2">
+                                    <button type="button" id="btn-cancel-create" class="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded">ยกเลิก</button>
+                                    <button type="button" id="btn-save-tag" class="px-3 py-1.5 text-xs bg-blue-600 text-white hover:bg-blue-700 rounded shadow">บันทึก</button>
+                                </div>
+                            </div>
+                            
+                            <button type="button" id="btn-show-create" class="w-full py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded border border-slate-200 text-center font-medium">
+                                สร้างแท็กใหม่
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- END TAGS UI -->
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">เลขที่เอกสารเบิกจ่าย</label>
+                        {{ form.disburse_doc_no }}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">แหล่งงบประมาณ <span class="text-red-500">*</span></label>
+                        {{ form.budget_source }}
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">จำนวนเงิน (บาท)</label>
+                        {{ form.amount }}
+                    </div>
+                    <div>
+                        <!-- Empty column or we can move something here -->
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">วันที่เริ่มต้น <span class="text-red-500">*</span> <span class="text-slate-400 font-normal text-xs">(กำหนดการ)</span></label>
+                        {{ form.start_date }}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">วันที่สิ้นสุด <span class="text-red-500">*</span> <span class="text-slate-400 font-normal text-xs">(กำหนดการ)</span></label>
+                        {{ form.end_date }}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">วันที่เบิกจ่ายจริง</label>
+                        {{ form.disbursed_date }}
+                    </div>
+                </div>
+
+                <!-- Priority & Difficulty Sliders -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">
+                            ระดับความสำคัญ <span id="priority-val" class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold ml-1">{{ form.priority.value|default:5 }}</span>
+                        </label>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-slate-400">1</span>
+                            {{ form.priority }}
+                            <span class="text-xs text-slate-400">10</span>
+                        </div>
+                        <div class="flex justify-between mt-1">
+                            <span class="text-[10px] text-slate-400">น้อย</span>
+                            <span class="text-[10px] text-slate-400">มาก</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">
+                            คะแนนความยาก <span id="difficulty-val" class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 text-amber-700 text-xs font-bold ml-1">{{ form.difficulty.value|default:5 }}</span>
+                        </label>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-slate-400">1</span>
+                            {{ form.difficulty }}
+                            <span class="text-xs text-slate-400">10</span>
+                        </div>
+                        <div class="flex justify-between mt-1">
+                            <span class="text-[10px] text-slate-400">ง่าย</span>
+                            <span class="text-[10px] text-slate-400">ยาก</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 mt-2 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    {{ form.is_completed }}
+                    <label class="text-sm font-semibold text-slate-700 cursor-pointer" for="{{ form.is_completed.id_for_label }}">เบิกจ่ายเสร็จสิ้น (ติ๊กเมื่อโครงการ/กิจกรรมนี้ใช้จ่ายเงินเรียบร้อยแล้ว)</label>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-6 border-t border-slate-100 mt-6">
+                <div class="flex items-center gap-3">
+                    <a href="{% if object %}{% url 'project_task_board' object.project.pk %}{% else %}{% url 'project_task_board' project.pk %}{% endif %}" class="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-semibold transition">ยกเลิก</a>
+                    <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm transition flex items-center gap-2">
+                        <i class="fa-solid fa-check"></i> บันทึกข้อมูล
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    {% if object %}
+    <!-- ==================== FOLLOWERS ==================== -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 class="font-bold text-slate-700 flex items-center gap-2">
+                <i class="fa-solid fa-user-group text-blue-500"></i> ผู้ติดตาม
+                <span class="badge bg-blue-50 text-blue-600">{{ task_followers.count }}</span>
+            </h3>
+            <!-- Self follow button -->
+            <form method="post" action="{% url 'task_follower_toggle' object.pk %}" data-no-confirm>
+                {% csrf_token %}
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition
+                    {% if is_following %}bg-blue-600 text-white hover:bg-blue-700{% else %}bg-slate-100 text-slate-600 hover:bg-blue-50 hover:text-blue-600{% endif %}">
+                    <i class="fa-solid {% if is_following %}fa-bell{% else %}fa-bell-slash{% endif %}"></i>
+                    {% if is_following %}กำลังติดตาม{% else %}ติดตาม{% endif %}
+                </button>
+            </form>
+        </div>
+        <div class="p-6">
+            <!-- Current followers -->
+            {% if task_followers %}
+            <div class="flex flex-wrap gap-3 mb-4">
+                {% for f in task_followers %}
+                <div class="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-full pl-1 pr-3 py-1">
+                    <div class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                        {{ f.user.first_name|first|default:f.user.username|first|upper }}
+                    </div>
+                    <span class="text-sm text-slate-700 font-medium">{{ f.user.get_full_name|default:f.user.username }}</span>
+                    <form method="post" action="{% url 'task_follower_toggle' object.pk %}" class="inline" data-no-confirm>
+                        {% csrf_token %}
+                        <input type="hidden" name="user_id" value="{{ f.user.pk }}">
+                        <button type="submit" class="text-slate-400 hover:text-red-500 transition ml-1" title="ลบผู้ติดตาม">
+                            <i class="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-slate-400 text-sm italic mb-4">ยังไม่มีผู้ติดตาม</p>
+            {% endif %}
+
+            <!-- Add follower from project members -->
+            <div class="border-t border-slate-100 pt-4">
+                <p class="text-xs text-slate-500 font-semibold mb-2 uppercase tracking-wider">เพิ่มผู้ติดตามจากทีมงาน</p>
+                <div class="flex flex-wrap gap-2">
+                    {% for member in project_members %}
+                    <form method="post" action="{% url 'task_follower_toggle' object.pk %}" class="inline" data-no-confirm>
+                        {% csrf_token %}
+                        <input type="hidden" name="user_id" value="{{ member.user.pk }}">
+                        <button type="submit" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition border
+                            {% if member.user.pk in follower_user_ids %}bg-blue-50 border-blue-200 text-blue-600{% else %}bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600{% endif %}">
+                            <div class="w-5 h-5 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold">
+                                {{ member.user.first_name|first|default:member.user.username|first|upper }}
+                            </div>
+                            {{ member.user.get_full_name|default:member.user.username }}
+                        </button>
+                    </form>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== ATTACHMENTS ==================== -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100">
+            <h3 class="font-bold text-slate-700 flex items-center gap-2">
+                <i class="fa-solid fa-paperclip text-emerald-500"></i> ไฟล์แนบ
+                <span class="badge bg-emerald-50 text-emerald-600">{{ attachments.count }}</span>
+            </h3>
+        </div>
+        <div class="p-6">
+            <!-- Upload form -->
+            <form method="post" action="{% url 'task_attachment_upload' object.pk %}" enctype="multipart/form-data" data-no-confirm class="mb-5">
+                {% csrf_token %}
+                <div id="drop-zone" class="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-blue-400 hover:bg-blue-50/30 transition-all cursor-pointer">
+                    <input type="file" name="files" multiple id="file-input" class="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar">
+                    <div class="flex flex-col items-center gap-2">
+                        <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                            <i class="fa-solid fa-cloud-arrow-up text-slate-400 text-xl"></i>
+                        </div>
+                        <p class="text-sm text-slate-500 font-medium">ลากไฟล์มาวางที่นี่ หรือ <span class="text-blue-600 font-semibold">คลิกเลือกไฟล์</span></p>
+                        <p class="text-xs text-slate-400">รองรับ: รูปภาพ, PDF, Word, Excel, PowerPoint, ZIP</p>
+                    </div>
+                </div>
+                <!-- Preview selected files -->
+                <div id="file-preview" class="hidden mt-3 space-y-2"></div>
+                <button type="submit" id="upload-btn" class="hidden mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition">
+                    <i class="fa-solid fa-upload mr-1"></i> อัปโหลดไฟล์
+                </button>
+            </form>
+
+            <!-- Existing attachments -->
+            {% if attachments %}
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {% for att in attachments %}
+                <div class="group relative bg-slate-50 border border-slate-100 rounded-xl overflow-hidden hover:shadow-md transition">
+                    {% if att.is_image %}
+                    <a href="{{ att.file.url }}" target="_blank" class="block">
+                        <img src="{{ att.file.url }}" alt="{{ att.file_name }}" class="w-full h-28 object-cover">
+                    </a>
+                    {% else %}
+                    <a href="{{ att.file.url }}" target="_blank" class="block h-28 flex items-center justify-center bg-slate-100">
+                        <i class="fa-solid {% if att.file_extension == 'pdf' %}fa-file-pdf text-red-500{% elif att.file_extension in 'doc,docx' %}fa-file-word text-blue-500{% elif att.file_extension in 'xls,xlsx' %}fa-file-excel text-emerald-500{% elif att.file_extension in 'ppt,pptx' %}fa-file-powerpoint text-orange-500{% else %}fa-file text-slate-400{% endif %} text-3xl"></i>
+                    </a>
+                    {% endif %}
+                    <div class="px-2 py-1.5">
+                        <p class="text-xs text-slate-600 truncate font-medium" title="{{ att.file_name }}">{{ att.file_name }}</p>
+                        <p class="text-[10px] text-slate-400">{{ att.uploaded_at|date:"d/m/y H:i" }}</p>
+                    </div>
+                    <!-- Delete button -->
+                    <form method="post" action="{% url 'task_attachment_delete' att.pk %}" data-no-confirm class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition">
+                        {% csrf_token %}
+                        <button type="submit" class="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow text-xs" title="ลบไฟล์">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-slate-400 text-sm italic text-center py-2">ยังไม่มีไฟล์แนบ</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ==================== COMMENTS ==================== -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100">
+            <h3 class="font-bold text-slate-700 flex items-center gap-2">
+                <i class="fa-solid fa-comments text-violet-500"></i> ความคิดเห็น
+                <span class="badge bg-violet-50 text-violet-600">{{ comments.count }}</span>
+            </h3>
+        </div>
+        <div class="p-6 space-y-4">
+            <!-- Add comment form -->
+            <form method="post" action="{% url 'task_comment_create' object.pk %}" data-no-confirm>
+                {% csrf_token %}
+                <div class="flex gap-3">
+                    <div class="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+                        {{ user.first_name|first|default:user.username|first|upper }}
+                    </div>
+                    <div class="flex-1">
+                        {{ comment_form.content }}
+                        <div class="flex justify-end mt-2">
+                            <button type="submit" class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl transition">
+                                <i class="fa-solid fa-paper-plane mr-1"></i> ส่งความคิดเห็น
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+            <!-- Comment list -->
+            {% if comments %}
+            <div class="border-t border-slate-100 pt-4 space-y-4">
+                {% for comment in comments %}
+                <div class="flex gap-3 group">
+                    <div class="w-9 h-9 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+                        {{ comment.user.first_name|first|default:comment.user.username|first|upper }}
+                    </div>
+                    <div class="flex-1 bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                        <div class="flex items-center justify-between mb-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-semibold text-slate-700">{{ comment.user.get_full_name|default:comment.user.username }}</span>
+                                <span class="text-xs text-slate-400">{{ comment.created_at|timesince }} ที่แล้ว</span>
+                            </div>
+                            {% if comment.user == user or user.is_staff %}
+                            <form method="post" action="{% url 'task_comment_delete' comment.pk %}" data-no-confirm class="opacity-0 group-hover:opacity-100 transition">
+                                {% csrf_token %}
+                                <button type="submit" class="text-slate-400 hover:text-red-500 transition" title="ลบ">
+                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        <p class="text-sm text-slate-600 whitespace-pre-line">{{ comment.content }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="border-t border-slate-100 pt-4">
+                <p class="text-slate-400 text-sm italic text-center">ยังไม่มีความคิดเห็น</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Scripts -->
+<script>
+    // Priority & Difficulty slider value display
+    const priorityInput = document.getElementById('id_priority');
+    const difficultyInput = document.getElementById('id_difficulty');
+    const priorityVal = document.getElementById('priority-val');
+    const difficultyVal = document.getElementById('difficulty-val');
+
+    if (priorityInput && priorityVal) {
+        priorityInput.addEventListener('input', function() {
+            priorityVal.textContent = this.value;
+        });
+    }
+    if (difficultyInput && difficultyVal) {
+        difficultyInput.addEventListener('input', function() {
+            difficultyVal.textContent = this.value;
+        });
+    }
+
+    // File upload drag & drop
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const filePreview = document.getElementById('file-preview');
+    const uploadBtn = document.getElementById('upload-btn');
+
+    if (dropZone && fileInput) {
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-blue-400', 'bg-blue-50');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+            fileInput.files = e.dataTransfer.files;
+            showPreview(fileInput.files);
+        });
+
+        fileInput.addEventListener('change', function() {
+            showPreview(this.files);
+        });
+    }
+
+    function showPreview(files) {
+        if (!filePreview || !uploadBtn) return;
+        filePreview.innerHTML = '';
+        filePreview.classList.remove('hidden');
+        uploadBtn.classList.remove('hidden');
+        
+        Array.from(files).forEach(file => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 text-sm';
+            const icon = file.type.startsWith('image/') ? 'fa-image text-blue-500' : 'fa-file text-slate-400';
+            div.innerHTML = `<i class="fa-solid ${icon}"></i><span class="text-slate-700 truncate flex-1">${file.name}</span><span class="text-slate-400 text-xs">${(file.size / 1024).toFixed(1)} KB</span>`;
+            filePreview.appendChild(div);
+        });
+    }
+</script>
+<script>
+// --- Tags UI Logic ---
+document.addEventListener('DOMContentLoaded', function() {
+    const btnAddTag = document.getElementById('btn-add-tag');
+    const tagsDropdown = document.getElementById('tags-dropdown');
+    const btnCloseDropdown = document.getElementById('btn-close-dropdown');
+    const tagsList = document.getElementById('tags-list');
+    const btnShowCreate = document.getElementById('btn-show-create');
+    const createTagForm = document.getElementById('create-tag-form');
+    const btnCancelCreate = document.getElementById('btn-cancel-create');
+    const btnSaveTag = document.getElementById('btn-save-tag');
+    const inputTagName = document.getElementById('new-tag-name');
+    const inputTagId = document.getElementById('edit-tag-id');
+    const colorButtons = document.querySelectorAll('.color-picker-btn');
+    const selectElement = document.getElementById('id_tags'); // The hidden real select multiple
+    const displayContainer = document.getElementById('selected-tags-display');
+    const projectId = "{{ project.id }}";
+    
+    let selectedColor = 'bg-emerald-500 text-white'; // default
+
+    // Toggle dropdown
+    btnAddTag.addEventListener('click', (e) => {
+        e.stopPropagation();
+        tagsDropdown.classList.toggle('hidden');
+        renderTagsUI();
+    });
+    
+    btnCloseDropdown.addEventListener('click', () => {
+        tagsDropdown.classList.add('hidden');
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+        if (!tagsDropdown.contains(e.target) && e.target !== btnAddTag && !btnAddTag.contains(e.target)) {
+            tagsDropdown.classList.add('hidden');
+        }
+    });
+
+    // Color picker logic
+    colorButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            colorButtons.forEach(b => {
+                b.style.transform = 'scale(1)';
+                b.style.boxShadow = 'none';
+            });
+            btn.style.transform = 'scale(1.1)';
+            btn.style.boxShadow = '0 0 0 2px white, 0 0 0 4px currentColor'; // focus ring
+            selectedColor = btn.dataset.color;
+        });
+    });
+
+    // Show Create Form
+    btnShowCreate.addEventListener('click', () => {
+        btnShowCreate.classList.add('hidden');
+        createTagForm.classList.remove('hidden');
+        inputTagName.value = '';
+        inputTagId.value = '';
+        inputTagName.focus();
+        colorButtons[0].click(); // select first color
+    });
+
+    // Cancel Create
+    btnCancelCreate.addEventListener('click', () => {
+        createTagForm.classList.add('hidden');
+        btnShowCreate.classList.remove('hidden');
+    });
+
+    // Create / Edit Tag (AJAX)
+    btnSaveTag.addEventListener('click', async () => {
+        const name = inputTagName.value.trim();
+        const tagId = inputTagId.value;
+        if (!name) return alert('กรุณากรอกชื่อแท็ก');
+
+        try {
+            btnSaveTag.disabled = true;
+            btnSaveTag.textContent = '...';
+            
+            let url = `/project/${projectId}/tag/create/`;
+            if (tagId) {
+                url = `/tag/${tagId}/update/`;
+            }
+            
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ name, color: selectedColor })
+            });
+            
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+
+            if (tagId) {
+                // Update existing
+                const item = document.querySelector(`.tag-item[data-tag-id="${data.id}"]`);
+                if (item) {
+                    item.dataset.tagName = data.name;
+                    item.dataset.tagColor = data.color;
+                    const labelDiv = item.querySelector('.tag-label-click');
+                    labelDiv.className = `tag-label-click flex-1 px-3 py-1.5 rounded ${data.color} text-sm font-medium relative cursor-pointer`;
+                    labelDiv.innerHTML = `${data.name} <i class="fa-solid fa-check absolute right-2 top-1/2 -translate-y-1/2 hidden tag-check-icon text-white/90"></i>`;
+                }
+                
+                // Update hidden select option
+                const option = selectElement.querySelector(`option[value="${data.id}"]`);
+                if (option) option.textContent = data.name;
+            } else {
+                // Add new to DOM
+                const html = `
+                <div class="tag-item flex items-center justify-between mb-1 group p-1 rounded" data-tag-id="${data.id}" data-tag-name="${data.name}" data-tag-color="${data.color}">
+                    <div class="tag-label-click flex-1 px-3 py-1.5 rounded ${data.color} text-sm font-medium relative cursor-pointer">
+                        ${data.name}
+                        <i class="fa-solid fa-check absolute right-2 top-1/2 -translate-y-1/2 hidden tag-check-icon text-white/90"></i>
+                    </div>
+                    <div class="flex gap-2 ml-2 opacity-0 group-hover:opacity-100 transition">
+                        <button type="button" class="btn-edit-tag text-slate-400 hover:text-blue-500"><i class="fa-solid fa-pen text-xs"></i></button>
+                        <button type="button" class="btn-delete-tag text-slate-400 hover:text-red-500"><i class="fa-solid fa-trash text-xs"></i></button>
+                    </div>
+                </div>`;
+                tagsList.insertAdjacentHTML('beforeend', html);
+                
+                // Add to hidden select
+                const option = document.createElement('option');
+                option.value = data.id;
+                option.textContent = data.name;
+                option.selected = true; // Auto-select new tags
+                selectElement.appendChild(option);
+            }
+            
+            // Cleanup
+            btnCancelCreate.click();
+            renderTagsUI();
+        } catch (err) {
+            alert('เกิดข้อผิดพลาด: ' + err.message);
+        } finally {
+            btnSaveTag.disabled = false;
+            btnSaveTag.textContent = 'บันทึก';
+        }
+    });
+
+    // Delete Tag (AJAX)
+    tagsList.addEventListener('click', async (e) => {
+        const btnDelete = e.target.closest('.btn-delete-tag');
+        if (btnDelete) {
+            const item = btnDelete.closest('.tag-item');
+            const tagId = item.dataset.tagId;
+            if (confirm('ยืนยันการลบแท็กนี้? จะถูกนำออกจากทุกกิจกรรมที่ใช้งานอยู่')) {
+                try {
+                    btnDelete.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xs"></i>';
+                    const res = await fetch(`/tag/${tagId}/delete/`, {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value }
+                    });
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error);
+                    
+                    item.remove();
+                    const option = selectElement.querySelector(`option[value="${tagId}"]`);
+                    if (option) option.remove();
+                    renderTagsUI();
+                } catch (err) {
+                    alert('เกิดข้อผิดพลาด: ' + err.message);
+                    btnDelete.innerHTML = '<i class="fa-solid fa-trash text-xs"></i>';
+                }
+            }
+            return;
+        }
+
+        const btnEdit = e.target.closest('.btn-edit-tag');
+        if (btnEdit) {
+            const item = btnEdit.closest('.tag-item');
+            inputTagId.value = item.dataset.tagId;
+            inputTagName.value = item.dataset.tagName;
+            btnShowCreate.click();
+            // Try to match color
+            const colorBtn = Array.from(colorButtons).find(b => b.dataset.color === item.dataset.tagColor);
+            if (colorBtn) colorBtn.click();
+            return;
+        }
+
+        const labelClick = e.target.closest('.tag-label-click');
+        if (labelClick) {
+            const item = labelClick.closest('.tag-item');
+            const tagId = item.dataset.tagId;
+            const option = selectElement.querySelector(`option[value="${tagId}"]`);
+            if (option) {
+                option.selected = !option.selected;
+                // Dispatch change event to trigger our global "highlight" logic
+                selectElement.dispatchEvent(new Event('change'));
+                renderTagsUI();
+            }
+        }
+    });
+
+    // Sync UI from hidden select
+    function renderTagsUI() {
+        displayContainer.innerHTML = '';
+        const items = tagsList.querySelectorAll('.tag-item');
+        
+        items.forEach(item => {
+            const tagId = item.dataset.tagId;
+            const option = selectElement.querySelector(`option[value="${tagId}"]`);
+            const isSelected = option && option.selected;
+            
+            // Update dropdown checkmark
+            const checkIcon = item.querySelector('.tag-check-icon');
+            if (isSelected) {
+                checkIcon.classList.remove('hidden');
+                
+                // Add badge to display
+                const badge = document.createElement('div');
+                badge.className = `px-2.5 py-1 rounded-md ${item.dataset.tagColor} text-xs font-medium cursor-pointer`;
+                badge.textContent = item.dataset.tagName;
+                badge.title = 'คลิกเพื่อเอาออก';
+                badge.addEventListener('click', () => {
+                    option.selected = false;
+                    selectElement.dispatchEvent(new Event('change'));
+                    renderTagsUI();
+                });
+                displayContainer.appendChild(badge);
+            } else {
+                checkIcon.classList.add('hidden');
+            }
+        });
+    }
+
+    // Initial render
+    renderTagsUI();
+});
+</script>
+{% endblock %}

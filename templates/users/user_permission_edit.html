@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% load plan_tags %}
+{% block title %}แก้ไขสิทธิ์ผู้ใช้งาน - SIP-Plan{% endblock %}
+{% block page_title %}แก้ไขสิทธิ์ผู้ใช้งาน{% endblock %}
+{% block page_subtitle %}กำหนดบทบาทและสิทธิ์การเข้าถึงระบบ{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="bg-gradient-to-r from-slate-800 to-blue-900 px-6 py-4 flex items-center gap-3">
+            {% include 'users/includes/avatar.html' with avatar_user=edited_user avatar_size='w-10 h-10' avatar_radius='rounded-xl' avatar_text='text-base' avatar_bg='bg-white/20' %}
+            <div>
+                <h3 class="text-white font-bold">{{ edited_user.get_full_name|default:edited_user.username }}</h3>
+                <p class="text-blue-300 text-xs">{{ edited_user.email }}</p>
+            </div>
+        </div>
+        <form method="post" class="p-6 space-y-3">
+            {% csrf_token %}
+            <p class="text-sm font-semibold text-slate-600 mb-3">เลือกสิทธิ์การเข้าถึงระบบ:</p>
+
+            {% for perm_label, field_name in perm_fields %}
+            <label class="flex items-center justify-between p-4 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 cursor-pointer transition">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-shield-halved text-blue-400"></i>
+                    <span class="text-sm font-medium text-slate-700">{{ perm_label }}</span>
+                </div>
+                <div class="relative">
+                    <input type="checkbox" name="{{ field_name }}" id="{{ field_name }}"
+                        {% if edited_user|get_attr:field_name %}checked{% endif %}
+                        class="sr-only peer">
+                    <label for="{{ field_name }}" class="w-10 h-5 bg-slate-200 peer-checked:bg-blue-600 rounded-full cursor-pointer transition relative block after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform peer-checked:after:translate-x-5"></label>
+                </div>
+            </label>
+            {% endfor %}
+
+            <div class="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-4">
+                <a href="{% url 'user_management' %}" class="px-5 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-sm font-semibold transition">ยกเลิก</a>
+                <button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-xl text-sm font-semibold shadow transition">
+                    <i class="fa-solid fa-check mr-1"></i> บันทึกสิทธิ์
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

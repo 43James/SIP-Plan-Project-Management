@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}รายละเอียดแผนงาน - SIP-Plan{% endblock %}
+{% block page_title %}รายละเอียดแผนงาน{% endblock %}
+
+{% block content %}
+<!-- Back Button -->
+<div class="mb-6">
+    <a href="{% url 'plan_list' %}" class="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-blue-600 transition">
+        <i class="fa-solid fa-arrow-left-long"></i> กลับไปหน้าจัดการแผนงาน
+    </a>
+</div>
+
+<!-- Plan Header Card -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-8">
+    <div class="bg-gradient-to-r from-slate-800 to-blue-900 px-6 py-5 relative">
+        <div class="absolute left-0 top-0 bottom-0 w-2 bg-blue-500"></div>
+        <div class="flex justify-between items-start">
+            <div class="pr-4">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold mb-3 uppercase tracking-wide bg-blue-500/20 text-blue-200 border border-blue-400/30">
+                    ปีงบประมาณ {{ plan.fiscal_year }}
+                </span>
+                <div class="flex items-center gap-3">
+                    <h2 class="text-white font-bold text-2xl">{{ plan.plan_code }}</h2>
+                    <h2 class="text-slate-300 font-medium text-xl border-l border-slate-600 pl-3">{{ plan.plan_name }}</h2>
+                </div>
+                {% if plan.parent %}
+                <p class="text-blue-200/80 text-sm mt-2 flex items-center gap-2">
+                    <i class="fa-solid fa-level-up fa-rotate-90"></i>
+                    แผนงานหลัก: <a href="{% url 'plan_detail' plan.parent.pk %}" class="hover:text-white transition">{{ plan.parent.plan_code }} {{ plan.parent.plan_name }}</a>
+                </p>
+                {% endif %}
+            </div>
+            
+            {% if user.is_budget_officer or user.is_executive or user.is_staff %}
+            <a href="{% url 'plan_edit' plan.pk %}" class="inline-flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm font-semibold rounded-xl backdrop-blur-sm transition border border-white/10">
+                <i class="fa-solid fa-pen-to-square"></i> แก้ไขแผนงาน
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 p-6 gap-6">
+        <!-- Budget Info -->
+        <div class="bg-slate-50 rounded-xl p-5 border border-slate-100">
+            <h3 class="text-sm font-bold text-slate-700 mb-4 border-b border-slate-200 pb-2">งบประมาณที่ได้รับจัดสรร (ปีปัจจุบัน)</h3>
+            <div class="space-y-4">
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold mb-1">งบจัดสรรทั้งหมด</p>
+                    <p class="text-xl font-bold text-slate-800">{{ plan.allocated_current_budget|floatformat:2|intcomma }} ฿</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold mb-1">งบคงเหลือ</p>
+                    <p class="text-2xl font-bold {% if plan.remaining_current_budget > 0 %}text-emerald-600{% elif plan.remaining_current_budget < 0 %}text-red-600{% else %}text-slate-600{% endif %}">
+                        {{ plan.remaining_current_budget|floatformat:2|intcomma }} ฿
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-slate-50 rounded-xl p-5 border border-slate-100">
+            <h3 class="text-sm font-bold text-slate-700 mb-4 border-b border-slate-200 pb-2">งบประมาณที่ได้รับจัดสรร (งบเหลื่อมปี)</h3>
+            <div class="space-y-4">
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold mb-1">งบจัดสรรทั้งหมด</p>
+                    <p class="text-xl font-bold text-slate-800">{{ plan.allocated_carry_over_budget|floatformat:2|intcomma }} ฿</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold mb-1">งบคงเหลือ</p>
+                    <p class="text-2xl font-bold {% if plan.remaining_carry_over_budget > 0 %}text-emerald-600{% elif plan.remaining_carry_over_budget < 0 %}text-red-600{% else %}text-slate-600{% endif %}">
+                        {{ plan.remaining_carry_over_budget|floatformat:2|intcomma }} ฿
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {% if plan.remarks %}
+    <div class="px-6 pb-6 pt-2">
+        <div class="bg-amber-50/50 rounded-xl p-4 border border-amber-100 flex gap-3">
+            <i class="fa-solid fa-note-sticky text-amber-500 mt-0.5"></i>
+            <div>
+                <h3 class="text-sm font-bold text-amber-800 mb-1">หมายเหตุ:</h3>
+                <p class="text-sm text-amber-700/80 whitespace-pre-wrap">{{ plan.remarks }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if sub_plans %}
+<div class="mb-8">
+    <div class="flex items-center gap-3 mb-4">
+        <h3 class="text-lg font-bold text-slate-800">แผนย่อยภายใต้แผนงานนี้</h3>
+        <span class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">{{ sub_plans.count }} แผนย่อย</span>
+    </div>
+    
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <table class="w-full text-left border-collapse">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-100">
+                    <th class="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-[15%]">รหัสแผน</th>
+                    <th class="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-[25%]">ชื่อแผนงาน</th>
+                    <th class="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-[15%] text-right">งบจัดสรร</th>
+                    <th class="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-[15%] text-right">งบคงเหลือ</th>
+                    <th class="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-[15%]">หมายเหตุ</th>
+                    <th class="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-[15%] text-center">จัดการ</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                {% for sub in sub_plans %}
+                <tr class="hover:bg-blue-50/30 transition">
+                    <td class="px-5 py-3 font-bold text-blue-700 text-sm">{{ sub.plan_code }}</td>
+                    <td class="px-5 py-3 text-slate-700 text-sm">{{ sub.plan_name }}</td>
+                    <td class="px-5 py-3 text-right font-semibold text-slate-600 text-sm">{{ sub.allocated_current_budget|floatformat:2|intcomma }} ฿</td>
+                    <td class="px-5 py-3 text-right text-emerald-600 font-semibold text-sm">{{ sub.remaining_current_budget|floatformat:2|intcomma }} ฿</td>
+                    <td class="px-5 py-3 text-xs text-slate-500 truncate max-w-[120px]" title="{{ sub.remarks|default:'' }}">
+                        {{ sub.remarks|default:"-" }}
+                    </td>
+                    <td class="px-5 py-3 text-center">
+                        <a href="{% url 'plan_detail' sub.pk %}" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+                            ดูรายละเอียด <i class="fa-solid fa-arrow-right"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div>
+    <div class="flex justify-between items-center mb-4">
+        <div class="flex items-center gap-3">
+            <h3 class="text-lg font-bold text-slate-800">โครงการในแผนงานนี้</h3>
+            <span class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">{{ projects.count }} โครงการ</span>
+        </div>
+        
+        {% if user.is_budget_officer or user.is_executive or user.is_staff %}
+        <a href="{% url 'project_create' %}" class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-xl shadow-sm transition">
+            <i class="fa-solid fa-plus"></i> เพิ่มโครงการ
+        </a>
+        {% endif %}
+    </div>
+
+    {% if projects %}
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {% for project in projects %}
+            {% include 'plans/partials/project_card.html' %}
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-12 text-center">
+        <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fa-solid fa-folder-open text-2xl text-slate-300"></i>
+        </div>
+        <h3 class="text-lg font-bold text-slate-700 mb-2">ยังไม่มีโครงการภายใต้แผนงานนี้</h3>
+        <p class="text-slate-500 mb-6 text-sm max-w-sm mx-auto">แผนงานนี้ยังไม่มีโครงการใดๆ ถูกสร้างขึ้น หรือโครงการอาจอยู่ในแผนย่อย</p>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}

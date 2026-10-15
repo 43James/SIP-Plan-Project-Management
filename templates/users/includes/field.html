@@ -1,0 +1,21 @@
+{% comment %} ===================================================================
+   แสดงหนึ่งช่องกรอกพร้อม label, help text และข้อความผิดพลาด
+
+   ตัวแปร:
+     field    - bound field ของฟอร์ม
+     required - ส่งค่าใด ๆ มาเพื่อให้แสดงดอกจันสีแดง
+
+   คลาส Tailwind ของ widget มาจาก INPUT_CLASS ใน users/forms.py
+   =================================================================== {% endcomment %}
+<div>
+    <label for="{{ field.id_for_label }}" class="block text-sm font-semibold text-slate-700 mb-1.5">
+        {{ field.label }}{% if required %} <span class="text-red-500">*</span>{% endif %}
+    </label>
+    {{ field }}
+    {% if field.help_text %}
+    <p class="text-xs text-slate-400 mt-1">{{ field.help_text }}</p>
+    {% endif %}
+    {% for error in field.errors %}
+    <p class="text-xs text-red-600 mt-1">{{ error }}</p>
+    {% endfor %}
+</div>

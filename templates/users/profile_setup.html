@@ -1,0 +1,337 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="th" class="h-full">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>กรอกข้อมูลส่วนตัว - SIP-Plan</title>
+    {% include "includes/head_assets.html" %}
+    <style>
+        body { background: linear-gradient(160deg, #f6f9fd 0%, #eef4fb 45%, #e6eff9 100%); }
+        .step-dot.active { background: #1a6ec1; color: #fff; }
+        .step-dot.done { background: #10b981; color: #fff; }
+        fieldset[hidden] { display: none; }
+        .field-error { border-color: #ef4444 !important; background: #fef2f2 !important; }
+    </style>
+</head>
+
+<body class="min-h-full py-6 px-4">
+
+<div class="max-w-3xl mx-auto">
+
+    <!-- ส่วนหัว -->
+    <div class="text-center mb-6">
+        <img src="{% static 'images/logo.png' %}" alt="SIP" class="h-14 w-auto mx-auto mb-3 object-contain">
+        <h1 class="text-2xl font-bold text-slate-800">กรอกข้อมูลส่วนตัว</h1>
+        <p class="text-slate-500 text-sm mt-1.5">
+            ยินดีต้อนรับ {{ user.get_full_name|default:user.username }} —
+            กรุณากรอกข้อมูลให้ครบถ้วนก่อนเริ่มใช้งานระบบ
+        </p>
+    </div>
+
+    {% if messages %}
+    <div class="space-y-2 mb-5">
+        {% for message in messages %}
+        <div class="flex items-start gap-2.5 p-3.5 rounded-xl text-sm
+            {% if message.tags == 'error' %}bg-red-50 border border-red-200 text-red-700
+            {% elif message.tags == 'success' %}bg-emerald-50 border border-emerald-200 text-emerald-700
+            {% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
+            <i class="fa-solid {% if message.tags == 'error' %}fa-circle-exclamation{% elif message.tags == 'success' %}fa-circle-check{% else %}fa-circle-info{% endif %} mt-0.5"></i>
+            <span>{{ message }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- ตัวบอกขั้นตอน -->
+    <div class="flex items-center justify-center gap-1.5 sm:gap-3 mb-6 flex-wrap" id="steps">
+        {% for label in "12345"|make_list %}
+        <div class="flex items-center gap-1.5">
+            <span class="step-dot w-8 h-8 rounded-full bg-slate-200 text-slate-500 text-xs font-bold flex items-center justify-center transition"
+                  data-dot="{{ forloop.counter0 }}">{{ forloop.counter }}</span>
+            {% if not forloop.last %}<span class="w-4 sm:w-8 h-px bg-slate-300"></span>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <form method="post" enctype="multipart/form-data" novalidate
+          class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="m-6 mb-0 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
+            {{ form.non_field_errors }}
+        </div>
+        {% endif %}
+
+        <!-- ============ 1. ข้อมูลส่วนบุคคล ============ -->
+        <fieldset data-step="0" class="p-6 sm:p-8">
+            <legend class="sr-only">ข้อมูลส่วนบุคคล</legend>
+            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2 mb-5">
+                <i class="fa-solid fa-id-card text-blue-600"></i> ข้อมูลส่วนบุคคล
+            </h2>
+
+            <div class="flex items-center gap-5 mb-6 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                <img id="photo-preview" src="{% static 'images/favicon-180.png' %}" alt=""
+                     class="w-20 h-20 rounded-2xl object-cover bg-white border border-slate-200 flex-shrink-0">
+                <div class="min-w-0 flex-1">
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        รูปประจำตัว <span class="text-slate-400 font-normal">(ไม่บังคับ)</span>
+                    </label>
+                    {{ form.photo }}
+                    <p class="text-xs text-slate-400 mt-1.5">{{ form.photo.help_text }}</p>
+                    {% for e in form.photo.errors %}<p class="text-xs text-red-600 mt-1">{{ e }}</p>{% endfor %}
+                </div>
+            </div>
+
+            <div class="grid sm:grid-cols-3 gap-4">
+                {% include 'users/includes/field.html' with field=form.title required=1 %}
+                {% include 'users/includes/field.html' with field=form.first_name required=1 %}
+                {% include 'users/includes/field.html' with field=form.last_name required=1 %}
+            </div>
+            <div class="mt-4" id="title-other-wrap" hidden>
+                {% include 'users/includes/field.html' with field=form.title_other %}
+            </div>
+            <div class="grid sm:grid-cols-2 gap-4 mt-4">
+                {% include 'users/includes/field.html' with field=form.first_name_en %}
+                {% include 'users/includes/field.html' with field=form.last_name_en %}
+            </div>
+            <div class="grid sm:grid-cols-2 gap-4 mt-4">
+                {% include 'users/includes/field.html' with field=form.date_of_birth %}
+                {% include 'users/includes/field.html' with field=form.gender %}
+            </div>
+        </fieldset>
+
+        <!-- ============ 2. ข้อมูลติดต่อ ============ -->
+        <fieldset data-step="1" class="p-6 sm:p-8" hidden>
+            <legend class="sr-only">ข้อมูลติดต่อ</legend>
+            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2 mb-5">
+                <i class="fa-solid fa-address-book text-blue-600"></i> ข้อมูลติดต่อ
+            </h2>
+            <div class="grid sm:grid-cols-2 gap-4">
+                {% include 'users/includes/field.html' with field=form.mobile_phone required=1 %}
+                {% include 'users/includes/field.html' with field=form.internal_extension %}
+            </div>
+            <div class="mt-4">
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">อีเมลสำหรับเข้าสู่ระบบ</label>
+                <input type="text" value="{{ user.email|default:'ยังไม่ได้ตั้งค่า' }}" readonly
+                       class="block w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 text-sm cursor-not-allowed">
+                <p class="text-xs text-slate-400 mt-1.5">
+                    แก้ไขได้โดยผู้ดูแลระบบเท่านั้น เนื่องจากใช้ผูกกับบัญชีเข้าสู่ระบบ
+                </p>
+            </div>
+            <div class="mt-4">
+                {% include 'users/includes/field.html' with field=form.backup_email %}
+            </div>
+            <div class="mt-4">
+                {% include 'users/includes/field.html' with field=form.address %}
+            </div>
+            <div class="grid sm:grid-cols-2 gap-4 mt-4">
+                {% include 'users/includes/field.html' with field=form.province %}
+                {% include 'users/includes/field.html' with field=form.postal_code %}
+            </div>
+        </fieldset>
+
+        <!-- ============ 3. ข้อมูลการปฏิบัติงาน ============ -->
+        <fieldset data-step="2" class="p-6 sm:p-8" hidden>
+            <legend class="sr-only">ข้อมูลการปฏิบัติงาน</legend>
+            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2 mb-5">
+                <i class="fa-solid fa-briefcase text-blue-600"></i> ข้อมูลการปฏิบัติงาน
+            </h2>
+            <div class="grid sm:grid-cols-2 gap-4">
+                {% include 'users/includes/field.html' with field=form.department %}
+                {% include 'users/includes/field.html' with field=form.position required=1 %}
+            </div>
+            <div class="grid sm:grid-cols-3 gap-4 mt-4">
+                {% include 'users/includes/field.html' with field=form.personnel_type %}
+                {% include 'users/includes/field.html' with field=form.position_number %}
+                {% include 'users/includes/field.html' with field=form.start_date %}
+            </div>
+        </fieldset>
+
+        <!-- ============ 4. ประวัติการศึกษา ============ -->
+        <fieldset data-step="3" class="p-6 sm:p-8" hidden>
+            <legend class="sr-only">ประวัติการศึกษา</legend>
+            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2">
+                <i class="fa-solid fa-graduation-cap text-blue-600"></i> ประวัติการศึกษา
+            </h2>
+            <p class="text-sm text-slate-500 mb-5">ไม่บังคับกรอก สามารถเพิ่มภายหลังได้ที่หน้าข้อมูลส่วนตัว</p>
+
+            {{ formset.management_form }}
+            <div id="education-rows" class="space-y-4">
+                {% for f in formset %}
+                <div class="education-row p-4 rounded-xl border border-slate-200 bg-slate-50/60">
+                    {{ f.id }}
+                    <div class="grid sm:grid-cols-2 gap-3">
+                        {% include 'users/includes/field.html' with field=f.degree_level %}
+                        {% include 'users/includes/field.html' with field=f.degree_name %}
+                        {% include 'users/includes/field.html' with field=f.major %}
+                        {% include 'users/includes/field.html' with field=f.institution %}
+                        {% include 'users/includes/field.html' with field=f.graduation_year %}
+                    </div>
+                    {% if f.instance.pk %}
+                    <label class="flex items-center gap-2 mt-3 text-sm text-red-600">
+                        {{ f.DELETE }} ลบรายการนี้
+                    </label>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <template id="education-empty">
+                <div class="education-row p-4 rounded-xl border border-slate-200 bg-slate-50/60">
+                    <div class="grid sm:grid-cols-2 gap-3">
+                        {% include 'users/includes/field.html' with field=formset.empty_form.degree_level %}
+                        {% include 'users/includes/field.html' with field=formset.empty_form.degree_name %}
+                        {% include 'users/includes/field.html' with field=formset.empty_form.major %}
+                        {% include 'users/includes/field.html' with field=formset.empty_form.institution %}
+                        {% include 'users/includes/field.html' with field=formset.empty_form.graduation_year %}
+                    </div>
+                </div>
+            </template>
+            <button type="button" id="add-education"
+                    class="mt-4 px-4 py-2 rounded-xl border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 text-sm font-semibold transition">
+                <i class="fa-solid fa-plus mr-1.5"></i> เพิ่มวุฒิการศึกษา
+            </button>
+        </fieldset>
+
+        <!-- ============ 5. เลขประจำตัวประชาชน + ความยินยอม ============ -->
+        <fieldset data-step="4" class="p-6 sm:p-8" hidden>
+            <legend class="sr-only">เลขประจำตัวประชาชนและความยินยอม</legend>
+            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2 mb-5">
+                <i class="fa-solid fa-shield-halved text-blue-600"></i> เลขประจำตัวประชาชนและความยินยอม
+            </h2>
+
+            <div class="p-4 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900 mb-5 leading-relaxed">
+                <p class="font-semibold mb-1.5">
+                    <i class="fa-solid fa-circle-info mr-1"></i> การคุ้มครองข้อมูลส่วนบุคคล
+                </p>
+                <p><strong>ผู้ควบคุมข้อมูล:</strong> อุทยานวิทยาศาสตร์และนวัตกรรม มหาวิทยาลัยอุบลราชธานี</p>
+                <p><strong>วัตถุประสงค์:</strong> ใช้ประกอบการบริหารงานบุคคลและเอกสารเบิกจ่ายงบประมาณเท่านั้น</p>
+                <p><strong>สิทธิของท่าน:</strong> ขอเข้าถึง แก้ไข หรือขอให้ลบข้อมูลส่วนบุคคลของท่านได้
+                   โดยติดต่อผู้ดูแลระบบ</p>
+                <p class="mt-1.5">ระบบจะแสดงเลขประจำตัวประชาชนแบบปิดบัง
+                   และเปิดเผยเฉพาะเจ้าของข้อมูลและผู้ดูแลระบบเท่านั้น</p>
+            </div>
+
+            <div class="max-w-sm">
+                {% include 'users/includes/field.html' with field=form.national_id %}
+            </div>
+
+            <label class="flex items-start gap-2.5 mt-6 p-4 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                {{ form.pdpa_consent }}
+                <span class="text-sm text-slate-700 leading-relaxed">
+                    {{ form.pdpa_consent.label }} <span class="text-red-500">*</span>
+                </span>
+            </label>
+            {% for e in form.pdpa_consent.errors %}
+            <p class="text-xs text-red-600 mt-1.5">{{ e }}</p>
+            {% endfor %}
+        </fieldset>
+
+        <!-- ปุ่มควบคุม -->
+        <div class="px-6 sm:px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+            <button type="button" id="btn-back"
+                    class="px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed">
+                <i class="fa-solid fa-arrow-left mr-1.5"></i> ย้อนกลับ
+            </button>
+            <div class="flex items-center gap-2">
+                <button type="button" id="btn-next"
+                        class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold shadow transition">
+                    ถัดไป <i class="fa-solid fa-arrow-right ml-1.5"></i>
+                </button>
+                <button type="submit" id="btn-submit" hidden
+                        class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white text-sm font-semibold shadow transition">
+                    <i class="fa-solid fa-check mr-1.5"></i> บันทึกและเริ่มใช้งาน
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <div class="text-center mt-5">
+        <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="text-xs text-slate-400 hover:text-red-500 transition">
+                <i class="fa-solid fa-right-from-bracket mr-1"></i> ออกจากระบบ
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+(function () {
+    const sections = Array.from(document.querySelectorAll('fieldset[data-step]'));
+    const dots = Array.from(document.querySelectorAll('[data-dot]'));
+    const btnBack = document.getElementById('btn-back');
+    const btnNext = document.getElementById('btn-next');
+    const btnSubmit = document.getElementById('btn-submit');
+    let current = 0;
+
+    // ถ้าเซิร์ฟเวอร์ส่ง error กลับมา ให้เปิดไปที่ส่วนแรกที่มีปัญหาเลย
+    // ผู้ใช้จะได้ไม่ต้องไล่กดหาเอง
+    const firstError = sections.findIndex(s => s.querySelector('.text-red-600'));
+    if (firstError > -1) current = firstError;
+
+    function render() {
+        sections.forEach((s, i) => { s.hidden = i !== current; });
+        dots.forEach((d, i) => {
+            d.classList.toggle('active', i === current);
+            d.classList.toggle('done', i < current);
+        });
+        btnBack.disabled = current === 0;
+        const last = current === sections.length - 1;
+        btnNext.hidden = last;
+        btnSubmit.hidden = !last;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    btnNext.addEventListener('click', () => {
+        // ตรวจเฉพาะช่องในส่วนปัจจุบัน เพื่อไม่ให้เด้ง error ของส่วนที่ยังไม่ถึง
+        const invalid = sections[current].querySelector(':invalid');
+        if (invalid) { invalid.reportValidity(); return; }
+        if (current < sections.length - 1) { current++; render(); }
+    });
+    btnBack.addEventListener('click', () => { if (current > 0) { current--; render(); } });
+    render();
+
+    // แสดงช่อง "ระบุคำนำหน้า" เฉพาะเมื่อเลือก "อื่น ๆ"
+    const titleSelect = document.getElementById('{{ form.title.id_for_label }}');
+    const otherWrap = document.getElementById('title-other-wrap');
+    function syncTitle() { otherWrap.hidden = titleSelect.value !== 'อื่น ๆ'; }
+    if (titleSelect) { titleSelect.addEventListener('change', syncTitle); syncTitle(); }
+
+    // พรีวิวรูปก่อนอัปโหลด
+    const photoInput = document.getElementById('{{ form.photo.id_for_label }}');
+    const preview = document.getElementById('photo-preview');
+    if (photoInput) {
+        photoInput.addEventListener('change', e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 5 * 1024 * 1024) {
+                alert('ไฟล์รูปต้องมีขนาดไม่เกิน 5 MB');
+                e.target.value = '';
+                return;
+            }
+            preview.src = URL.createObjectURL(file);
+        });
+    }
+
+    // เพิ่มแถวประวัติการศึกษา โดยโคลนจาก empty_form ของ Django
+    const addBtn = document.getElementById('add-education');
+    const rows = document.getElementById('education-rows');
+    const tpl = document.getElementById('education-empty');
+    const totalForms = document.getElementById('id_{{ formset.prefix }}-TOTAL_FORMS');
+    if (addBtn && tpl && totalForms) {
+        addBtn.addEventListener('click', () => {
+            const index = parseInt(totalForms.value, 10);
+            const html = tpl.innerHTML.replace(/__prefix__/g, index);
+            const wrap = document.createElement('div');
+            wrap.innerHTML = html.trim();
+            rows.appendChild(wrap.firstElementChild);
+            totalForms.value = index + 1;
+        });
+    }
+})();
+</script>
+</body>
+</html>

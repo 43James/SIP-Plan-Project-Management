@@ -1,0 +1,326 @@
+{% extends 'base.html' %}
+{% load plan_tags humanize %}
+{% block title %}จัดการแผนงาน - SIP-Plan{% endblock %}
+{% block page_title %}จัดการแผนงาน{% endblock %}
+{% block page_subtitle %}รายการแผนงานในปีงบประมาณ {{ selected_year }}{% endblock %}
+
+{% block content %}
+
+<!-- Filter Bar -->
+<form method="get" id="filter-form" data-no-confirm class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5 flex flex-wrap gap-3 items-end">
+    <!-- Search -->
+    <div class="flex-1 min-w-48">
+        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">ค้นหาแผนงาน</label>
+        <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input type="text" name="q" value="{{ search_q }}" id="search-input"
+                placeholder="พิมพ์รหัสหรือชื่อแผนงาน..."
+                class="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 text-slate-800 text-sm bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none transition">
+        </div>
+    </div>
+
+    <!-- Year Filter -->
+    <div class="min-w-40">
+        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">ปีงบประมาณ</label>
+        <select name="year" id="year-select" onchange="this.form.submit()"
+            class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-slate-800 text-sm bg-slate-50 focus:border-blue-500 focus:outline-none transition">
+            {% for yr in available_years %}
+            <option value="{{ yr }}" {% if yr|stringformat:"s" == selected_year %}selected{% endif %}>
+                ปีงบประมาณ {{ yr }} {% if yr == current_thai_year %}(ปัจจุบัน){% endif %}
+            </option>
+            {% endfor %}
+            {% if not available_years %}
+            <option value="{{ current_thai_year }}" selected>ปีงบประมาณ {{ current_thai_year }} (ปัจจุบัน)</option>
+            {% endif %}
+        </select>
+    </div>
+
+    <!-- Search Button -->
+    <div class="flex gap-2">
+        <button type="submit" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition">
+            <i class="fa-solid fa-magnifying-glass mr-1"></i> ค้นหา
+        </button>
+        {% if search_q %}
+        <a href="?year={{ selected_year }}" class="px-4 py-2.5 border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-semibold transition">
+            <i class="fa-solid fa-xmark mr-1"></i> ล้าง
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Create Button -->
+    {% if user.is_budget_officer or user.is_executive or user.is_staff %}
+    <a href="{% url 'plan_create' %}" class="ml-auto px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-xl shadow transition flex items-center gap-2">
+        <i class="fa-solid fa-plus"></i> สร้างแผนงานใหม่
+    </a>
+    {% endif %}
+</form>
+
+<!-- Stats Bar -->
+<div class="flex items-center gap-4 mb-4">
+    <p class="text-slate-600 text-sm">
+        <i class="fa-solid fa-layer-group text-blue-500 mr-1.5"></i>
+        แสดง <span class="font-bold text-slate-800">{{ parent_plans|length }}</span> แผนงานหลัก
+        {% if search_q %} ที่ตรงกับ "<span class="font-semibold text-blue-600">{{ search_q }}</span>"{% endif %}
+    </p>
+    <button onclick="expandAll()" class="text-xs text-blue-600 hover:text-blue-800 font-semibold transition">
+        <i class="fa-solid fa-angles-down mr-1"></i> ขยายทั้งหมด
+    </button>
+    <button onclick="collapseAll()" class="text-xs text-slate-500 hover:text-slate-700 font-semibold transition">
+        <i class="fa-solid fa-angles-up mr-1"></i> ย่อทั้งหมด
+    </button>
+</div>
+
+<!-- Plan Table -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <table class="min-w-full">
+        <thead>
+            <tr class="bg-slate-50 border-b border-slate-100">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-8"></th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">รหัสแผน</th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ชื่อแผนงาน</th>
+                <th class="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">งบจัดสรร (ปีปัจจุบัน)</th>
+                <th class="px-5 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-[20%] text-right">งบคงเหลือ</th>
+                <th class="px-5 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-[15%] text-center">โครงการ</th>
+                <th class="px-5 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-[10%] text-center">จัดการ</th>
+            </tr>
+        </thead>
+        <tbody id="plan-table-body">
+
+        {% if parent_plans %}
+            {% for plan in parent_plans %}
+    {% with children=children_map|get_item:plan.pk %}
+
+            <!-- Parent Row -->
+            <tr class="parent-row border-b border-slate-100 hover:bg-blue-50/30 transition cursor-pointer group"
+                onclick="toggleChildren('{{ plan.pk }}')" id="parent-{{ plan.pk }}">
+
+                <!-- Toggle Arrow -->
+                <td class="pl-4 pr-1 py-4 text-center">
+                    {% if children %}
+                    <div id="arrow-{{ plan.pk }}" class="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center transition-transform duration-200 mx-auto">
+                        <i class="fa-solid fa-chevron-right text-blue-600 text-xs transition-transform duration-200" id="icon-{{ plan.pk }}"></i>
+                    </div>
+                    {% else %}
+                    <div class="w-6 h-6 flex items-center justify-center mx-auto">
+                        <div class="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
+                    </div>
+                    {% endif %}
+                </td>
+
+                <!-- Plan Code -->
+                <td class="px-5 py-4">
+                    <span class="font-bold text-blue-700 text-sm">{{ plan.plan_code }}</span>
+                    {% if children %}
+                    <span class="ml-2 badge bg-blue-100 text-blue-600">{{ children|length }} แผนย่อย</span>
+                    {% endif %}
+                </td>
+
+                <!-- Plan Name -->
+                <td class="px-5 py-4">
+                    <p class="text-sm font-semibold text-slate-800">{{ plan.plan_name }}</p>
+                </td>
+
+                <!-- Budget -->
+                <td class="px-5 py-4 text-right">
+                    <p class="text-sm font-semibold text-slate-700">{{ plan.allocated_current_budget|floatformat:2|intcomma }} ฿</p>
+                    {% if plan.allocated_carry_over_budget > 0 %}
+                    <p class="text-xs text-slate-400">+{{ plan.allocated_carry_over_budget|floatformat:2|intcomma }} ฿ (เหลื่อม)</p>
+                    {% endif %}
+                </td>
+
+                <!-- Remaining -->
+                <td class="px-5 py-4 text-right">
+                    <p class="text-sm font-bold {% if plan.remaining_current_budget < 0 %}text-red-600{% else %}text-emerald-600{% endif %}">
+                        {{ plan.remaining_current_budget|floatformat:2|intcomma }} ฿
+                    </p>
+                </td>
+
+                <!-- Projects -->
+                <td class="px-5 py-4 text-center">
+                    <span class="badge bg-slate-100 text-slate-600">{{ plan.total_projects_count }}</span>
+                </td>
+
+                <!-- Actions -->
+                <td class="px-5 py-4 text-center" onclick="event.stopPropagation()">
+                    <div class="flex items-center justify-center gap-1">
+                        <a href="{% url 'plan_detail' plan.pk %}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition whitespace-nowrap" title="รายละเอียดแผนงาน">
+                            <i class="fa-solid fa-file-lines"></i> รายละเอียด
+                        </a>
+                        {% if user.is_budget_officer or user.is_executive or user.is_staff %}
+                        <a href="{% url 'plan_edit' plan.pk %}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition whitespace-nowrap" title="แก้ไขแผนงาน">
+                            <i class="fa-solid fa-pen-to-square"></i> แก้ไข
+                        </a>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+
+            <!-- Children Rows (Hidden by default) -->
+            {% for child in children %}
+            <tr class="child-row child-of-{{ plan.pk }} hidden border-b border-slate-100 hover:bg-violet-50/30 transition"
+                style="background: linear-gradient(90deg, rgba(239,246,255,0.5) 0%, transparent 2%);">
+
+                <!-- Indent indicator -->
+                <td class="pl-4 pr-1 py-3.5">
+                    <div class="flex items-center justify-center mx-auto">
+                        <div class="w-0.5 h-5 bg-blue-200 mx-auto"></div>
+                    </div>
+                </td>
+
+                <!-- Plan Code -->
+                <td class="px-5 py-3.5">
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-0.5 bg-blue-200 flex-shrink-0"></div>
+                        <span class="font-semibold text-violet-700 text-sm">{{ child.plan_code }}</span>
+                    </div>
+                </td>
+
+                <!-- Plan Name -->
+                <td class="px-5 py-3.5">
+                    <p class="text-sm text-slate-700">{{ child.plan_name }}</p>
+                </td>
+
+                <!-- Budget -->
+                <td class="px-5 py-3.5 text-right">
+                    <p class="text-sm text-slate-600">{{ child.allocated_current_budget|floatformat:2|intcomma }} ฿</p>
+                    {% if child.allocated_carry_over_budget > 0 %}
+                    <p class="text-xs text-slate-400">+{{ child.allocated_carry_over_budget|floatformat:2|intcomma }} ฿</p>
+                    {% endif %}
+                </td>
+
+                <!-- Remaining -->
+                <td class="px-5 py-3.5 text-right">
+                    <p class="text-sm font-semibold {% if child.remaining_current_budget < 0 %}text-red-500{% else %}text-emerald-600{% endif %}">
+                        {{ child.remaining_current_budget|floatformat:2|intcomma }} ฿
+                    </p>
+                </td>
+
+                <!-- Projects -->
+                <td class="px-5 py-3.5 text-center">
+                    <span class="badge bg-slate-100 text-slate-500">{{ child.projects.count }}</span>
+                </td>
+
+                <!-- Actions -->
+                <td class="px-5 py-3.5 text-center" onclick="event.stopPropagation()">
+                    <div class="flex items-center justify-center gap-1">
+                        <a href="{% url 'plan_detail' child.pk %}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition whitespace-nowrap" title="รายละเอียดแผนงาน">
+                            <i class="fa-solid fa-file-lines"></i> รายละเอียด
+                        </a>
+                        {% if user.is_budget_officer or user.is_executive or user.is_staff %}
+                        <a href="{% url 'plan_edit' child.pk %}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition whitespace-nowrap" title="แก้ไขแผนงาน">
+                            <i class="fa-solid fa-pen-to-square"></i> แก้ไข
+                        </a>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+
+            {% endwith %}
+            {% endfor %}
+
+        {% else %}
+            <tr>
+                <td colspan="7" class="px-5 py-20 text-center">
+                    <i class="fa-solid fa-folder-open text-slate-300 text-4xl mb-4 block"></i>
+                    <p class="text-slate-500 font-medium">ไม่พบแผนงานในปีงบประมาณ {{ selected_year }}</p>
+                    {% if search_q %}<p class="text-slate-400 text-sm mt-1">ลองเปลี่ยนคำค้นหาดูครับ</p>{% endif %}
+                    {% if user.is_budget_officer or user.is_executive or user.is_staff %}
+                    <a href="{% url 'plan_create' %}" class="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition">
+                        <i class="fa-solid fa-plus"></i> สร้างแผนงานใหม่
+                    </a>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endif %}
+
+        </tbody>
+    </table>
+</div>
+
+<script>
+// Toggle sub-plans visibility
+function toggleChildren(parentId) {
+    const children = document.querySelectorAll('.child-of-' + parentId);
+    const icon = document.getElementById('icon-' + parentId);
+    const arrow = document.getElementById('arrow-' + parentId);
+
+    if (!children.length) return;
+
+    const isExpanded = !children[0].classList.contains('hidden');
+
+    children.forEach(function(row) {
+        if (isExpanded) {
+            row.classList.add('hidden');
+        } else {
+            row.classList.remove('hidden');
+            // Animate in
+            row.style.opacity = '0';
+            row.style.transform = 'translateY(-4px)';
+            requestAnimationFrame(function() {
+                row.style.transition = 'opacity 0.18s ease, transform 0.18s ease';
+                row.style.opacity = '1';
+                row.style.transform = 'translateY(0)';
+            });
+        }
+    });
+
+    // Rotate arrow icon
+    if (icon) {
+        if (isExpanded) {
+            icon.style.transform = 'rotate(0deg)';
+            arrow.classList.remove('bg-blue-600');
+            arrow.classList.add('bg-blue-100');
+            icon.classList.remove('text-white');
+            icon.classList.add('text-blue-600');
+        } else {
+            icon.style.transform = 'rotate(90deg)';
+            arrow.classList.remove('bg-blue-100');
+            arrow.classList.add('bg-blue-600');
+            icon.classList.remove('text-blue-600');
+            icon.classList.add('text-white');
+        }
+    }
+}
+
+function expandAll() {
+    document.querySelectorAll('[class*="child-of-"]').forEach(function(row) {
+        row.classList.remove('hidden');
+    });
+    document.querySelectorAll('[id^="icon-"]').forEach(function(icon) {
+        icon.style.transform = 'rotate(90deg)';
+        icon.classList.remove('text-blue-600');
+        icon.classList.add('text-white');
+    });
+    document.querySelectorAll('[id^="arrow-"]').forEach(function(arrow) {
+        arrow.classList.remove('bg-blue-100');
+        arrow.classList.add('bg-blue-600');
+    });
+}
+
+function collapseAll() {
+    document.querySelectorAll('[class*="child-of-"]').forEach(function(row) {
+        row.classList.add('hidden');
+    });
+    document.querySelectorAll('[id^="icon-"]').forEach(function(icon) {
+        icon.style.transform = 'rotate(0deg)';
+        icon.classList.add('text-blue-600');
+        icon.classList.remove('text-white');
+    });
+    document.querySelectorAll('[id^="arrow-"]').forEach(function(arrow) {
+        arrow.classList.add('bg-blue-100');
+        arrow.classList.remove('bg-blue-600');
+    });
+}
+
+// Auto-expand if search is active
+{% if search_q %}
+document.addEventListener('DOMContentLoaded', expandAll);
+{% endif %}
+
+// Enter key to search
+document.getElementById('search-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('filter-form').submit();
+});
+</script>
+{% endblock %}

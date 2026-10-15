@@ -1,0 +1,10 @@
+venv/
+venv_*/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+.DS_Store
+*.stackdump

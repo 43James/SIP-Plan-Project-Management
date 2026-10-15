@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block title %}จัดการสิทธิ์ผู้ใช้งาน - SIP-Plan{% endblock %}
+{% block page_title %}จัดการสิทธิ์ผู้ใช้งาน{% endblock %}
+{% block page_subtitle %}กำหนดสิทธิ์การเข้าถึงระบบให้แก่ผู้ใช้งานแต่ละคน{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+        <p class="text-sm text-slate-500">พนักงานทั้งหมด <span class="font-bold text-slate-800">{{ users|length }}</span> คน</p>
+        <div class="flex gap-2">
+            <a href="{% url 'department_list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold rounded-xl shadow border border-slate-200 transition">
+                <i class="fa-solid fa-sitemap text-blue-500"></i> จัดการกลุ่มงาน
+            </a>
+            <a href="{% url 'user_create' %}" class="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-xl shadow transition">
+                <i class="fa-solid fa-user-plus"></i> เพิ่มผู้ใช้งาน
+            </a>
+        </div>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-100">
+            <thead class="bg-slate-50">
+                <tr>
+                    <th class="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ผู้ใช้งาน</th>
+                    <th class="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">กลุ่มงาน/แผนก</th>
+                    <th class="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ตำแหน่ง</th>
+                    <th class="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Sys Admin</th>
+                    <th class="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Executive</th>
+                    <th class="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Budget Officer</th>
+                    <th class="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Finance</th>
+                    <th class="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Dept. Head</th>
+                    <th class="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Staff</th>
+                    <th class="px-5 py-3.5"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                {% for u in users %}
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="px-5 py-4">
+                        <div class="flex items-center gap-3">
+                            {% include 'users/includes/avatar.html' with avatar_user=u avatar_size='w-9 h-9' avatar_radius='rounded-full' avatar_text='text-sm' %}
+                            <div>
+                                <p class="text-sm font-medium text-slate-800">{{ u.get_full_name|default:u.username }}</p>
+                                <p class="text-xs text-slate-400">{{ u.email }}</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-5 py-4 text-sm text-slate-600">{{ u.department|default:"-" }}</td>
+                    <td class="px-5 py-4 text-sm text-slate-600">{{ u.position|default:"-" }}</td>
+
+                    <td class="px-5 py-4 text-center">
+                        <span class="inline-block w-5 h-5 rounded-full {% if u.is_superuser %}bg-red-500{% else %}bg-slate-200{% endif %}"></span>
+                    </td>
+
+                    {% for field in u.role_fields %}
+                    <td class="px-5 py-4 text-center">
+                        <span class="inline-block w-5 h-5 rounded-full {% if field %}bg-blue-500{% else %}bg-slate-200{% endif %}"></span>
+                    </td>
+                    {% endfor %}
+
+                    <td class="px-5 py-4 text-right">
+                        <a href="{% url 'user_permission_edit' u.pk %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+                            <i class="fa-solid fa-pen-to-square"></i> แก้ไขสิทธิ์
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="10" class="px-5 py-16 text-center text-slate-400">
+                        <i class="fa-solid fa-users text-3xl mb-3 block"></i> ไม่มีผู้ใช้งานในระบบ
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
