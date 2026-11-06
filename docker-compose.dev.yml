@@ -1,0 +1,41 @@
+# ===========================================================================
+# PostgreSQL สำหรับพัฒนาบนเครื่องตัวเอง (ไม่ใช่สำหรับ NAS)
+#
+# มีแค่ฐานข้อมูลอย่างเดียว ตัวแอปยังรันด้วย runserver ตามปกติ
+# เปิดพอร์ต 55432 (ไม่ใช่ 5432) กันชนกับ Postgres ตัวอื่นบนเครื่อง
+#
+#   เปิด :  docker compose -f docker-compose.dev.yml up -d
+#   ปิด :  docker compose -f docker-compose.dev.yml down
+#   ลบข้อมูลทิ้งทั้งหมด:
+#          docker compose -f docker-compose.dev.yml down -v
+#
+# ⚠️ ต้องเรียกด้วย -f เสมอ ตั้งใจไม่ตั้งชื่อเป็น docker-compose.override.yml
+#    เพราะไฟล์ชื่อนั้น compose จะหยิบไปรวมอัตโนมัติ ถ้าเผลอคัดลอกขึ้น NAS
+#    จะกลายเป็นการเปิดพอร์ตฐานข้อมูลออกสู่เครือข่ายโดยไม่ตั้งใจ
+# ===========================================================================
+
+name: sip-plan-dev
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sip_plan_db
+      POSTGRES_USER: sip_user
+      # รหัสผ่านสำหรับเครื่อง dev เท่านั้น ฐานข้อมูลนี้ไม่มีข้อมูลจริงที่เป็นความลับ
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+      TZ: Asia/Bangkok
+    ports:
+      - "127.0.0.1:55432:5432"   # ผูกกับ localhost เท่านั้น ไม่เปิดออกเครือข่าย
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sip_user -d sip_plan_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata_dev:

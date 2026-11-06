@@ -27,3 +27,7 @@ Thumbs.db
 *.stackdump
 .idea/
 .vscode/
+
+# ไฟล์สำรองข้อมูล (มีข้อมูลจริงทั้งหมด ห้ามเข้า git)
+backups/
+*.dump

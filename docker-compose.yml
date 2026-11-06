@@ -1,41 +1,95 @@
-version: '3.8'
+# ===========================================================================
+# SIP-Plan — สำหรับติดตั้งใช้งานจริงบน Synology NAS (Container Manager)
+#
+# วิธีใช้บน NAS:
+#   1. คัดลอกโปรเจ็คทั้งโฟลเดอร์ขึ้น NAS (เช่น /volume1/docker/sip-plan)
+#      ⚠️ ต้องเป็นโฟลเดอร์ที่ "ไม่ได้เปิด Synology Drive sync" ไว้
+#   2. สร้างไฟล์ .env จาก .env.example แล้วกรอกค่าให้ครบ
+#      อย่างน้อยต้องมี POSTGRES_PASSWORD, DJANGO_SECRET_KEY,
+#      DJANGO_DEBUG=False และ DJANGO_ALLOWED_HOSTS
+#   3. docker compose up -d --build
+#   4. สร้างผู้ดูแลระบบคนแรก:
+#      docker compose exec web python manage.py createsuperuser
+#
+#   5. ย้ายข้อมูลเดิมเข้าระบบ (ถ้ามี)
+#      ฐานข้อมูล:
+#        docker compose cp dump.json web:/tmp/dump.json
+#        docker compose exec web python manage.py loaddata /tmp/dump.json
+#      ไฟล์ที่ผู้ใช้อัปโหลด — ⚠️ ห้ามลืมขั้นนี้
+#      ฐานข้อมูลเก็บแค่ชื่อไฟล์ ถ้าไม่ย้ายไฟล์จริงตามมา
+#      รูปโปรไฟล์และเอกสารแนบทั้งหมดจะขึ้น 404:
+#        docker compose cp ./media/. web:/app/media/
+#        docker compose exec -u root web chown -R sip:sip /app/media
+#
+# ต้องใช้ DSM 7.2 ขึ้นไป (Container Manager ที่มาพร้อม Compose V2)
+# ===========================================================================
+
+# ตั้งชื่อ project ให้ชัดเจน ไม่ให้ขึ้นกับชื่อโฟลเดอร์
+# (ถ้าปล่อยว่าง ชื่อ volume จะเปลี่ยนตามชื่อโฟลเดอร์ที่วางบน NAS)
+name: sip-plan
 
 services:
+
   db:
-    image: mysql:8.0
-    restart: always
+    image: postgres:17-alpine
+    restart: unless-stopped
     environment:
-      MYSQL_DATABASE: sip_plan_db
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_USER: sip_user
-      MYSQL_PASSWORD: sippassword
-    ports:
-      - "3306:3306"
+      POSTGRES_DB: ${POSTGRES_DB:-sip_plan_db}
+      POSTGRES_USER: ${POSTGRES_USER:-sip_user}
+      # ไม่มีค่าเริ่มต้นโดยตั้งใจ — ถ้าลืมตั้งใน .env ระบบจะไม่ยอมสตาร์ท
+      # ดีกว่าปล่อยให้ขึ้นมาพร้อมรหัสผ่านที่เดาได้
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ต้องตั้ง POSTGRES_PASSWORD ในไฟล์ .env ก่อน}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+      TZ: Asia/Bangkok
     volumes:
-      - mysql_data:/var/lib/mysql
+      # named volume — ไม่ใช่ bind mount โดยตั้งใจ
+      # เพราะ Synology Drive / Hyper Backup แตะไฟล์ในโฟลเดอร์แชร์ได้
+      # แต่แตะ docker volume ไม่ได้ จึงไม่มีทางทำข้อมูลพังกลางคัน
+      - pgdata:/var/lib/postgresql/data
+    # ไม่ publish port ออกนอกเครื่อง มีแค่ container web ที่ต้องใช้
+    # (ของเดิมเปิด 3306 ออกสู่ภายนอกพร้อมรหัสผ่าน default)
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sip_user} -d ${POSTGRES_DB:-sip_plan_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   web:
     build: .
-    restart: always
-    command: >
-      sh -c "python manage.py migrate &&
-             python manage.py collectstatic --noinput &&
-             gunicorn --bind 0.0.0.0:8000 core.wsgi:application"
-    volumes:
-      - .:/app
-    ports:
-      - "8000:8000"
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - DB_NAME=sip_plan_db
-      - DB_USER=sip_user
-      - DB_PASSWORD=sippassword
-      - DB_HOST=db
-      - DB_PORT=3306
-      - DJANGO_SECRET_KEY=dev-secret-key-replace-in-prod
-      - DJANGO_DEBUG=True
-      - DJANGO_ALLOWED_HOSTS=*
+      # ประกอบ DATABASE_URL จากค่าเดียวกับ service db
+      # ค่าที่ตั้งตรงนี้ชนะค่าใน env_file เสมอ
+      DATABASE_URL: postgres://${POSTGRES_USER:-sip_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sip_plan_db}
+      TZ: Asia/Bangkok
+    volumes:
+      # ไฟล์ที่ผู้ใช้อัปโหลด (รูปโปรไฟล์ เอกสารแนบ) ต้องอยู่รอดข้ามการ rebuild
+      # ⚠️ อย่าลืมสำรอง volume นี้ด้วย ไม่ใช่สำรองแค่ฐานข้อมูล
+      - media:/app/media
+      # ไม่ mount ซอร์สโค้ดทับ (ของเดิมมี .:/app ซึ่งเป็นค่าสำหรับ dev
+      # ทำให้โค้ดบน NAS ทับโค้ดใน image และ collectstatic ได้ผลไม่แน่นอน)
+    ports:
+      - "${WEB_PORT:-8000}:8000"
     depends_on:
-      - db
+      db:
+        # รอจน healthcheck ผ่านจริง ไม่ใช่แค่ container ขึ้น
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  mysql_data:
+  pgdata:
+  media:

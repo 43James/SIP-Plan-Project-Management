@@ -8,10 +8,13 @@ SIP-Plan — a Django 5 web application for Thai government budget planning and 
 
 ## Commands
 
-The local virtualenv is `.venv/` (Python 3.14, Django 5.2). Always run through it:
+The local virtualenv is `.venv/` (Python 3.14, Django 5.2). Always run through it.
+
+**Start the dev database first** — `runserver` fails without it:
 
 ```bash
-.venv/bin/python manage.py runserver          # dev server on :8000, SQLite
+docker compose -f docker-compose.dev.yml up -d   # Postgres on 127.0.0.1:55432
+.venv/bin/python manage.py runserver             # dev server on :8000
 .venv/bin/python manage.py makemigrations
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py createsuperuser
@@ -19,13 +22,15 @@ The local virtualenv is `.venv/` (Python 3.14, Django 5.2). Always run through i
 .venv/bin/python manage.py collectstatic --noinput
 ```
 
-Docker (MySQL + gunicorn; migrate and collectstatic run automatically on boot):
+Production stack (Postgres + gunicorn; migrate and collectstatic run automatically on boot). Requires `POSTGRES_PASSWORD` and, with `DJANGO_DEBUG=False`, a real `DJANGO_SECRET_KEY` and explicit `DJANGO_ALLOWED_HOSTS` — the stack refuses to start otherwise:
 
 ```bash
-docker compose up --build
+docker compose up -d --build
+docker compose exec web python manage.py createsuperuser
+docker compose logs -f web
 ```
 
-Back up the database (safe while the app is running):
+Back up the database and uploaded files (safe while the app is running):
 
 ```bash
 ./scripts/backup_db.sh
@@ -35,25 +40,72 @@ There is no linter and no frontend build step in this repo.
 
 ## Database
 
+**PostgreSQL 17.** Migrated from SQLite on 2026-11-06 ahead of the real deployment; the dataset moved was 44 objects.
+
 Config is read via `django-environ`. `core/settings.py` calls `read_env()` on `.env` at the project root when present; real environment variables always win. `.env` is git-ignored — `.env.example` documents every variable.
 
-`USE_SQLITE` **defaults to `True`**. SQLite is used unless `USE_SQLITE=False`, and only then are `DB_NAME`/`DB_USER`/`DB_PASSWORD`/`DB_HOST`/`DB_PORT` read for MySQL.
+A single `DATABASE_URL` selects the backend:
 
-### The SQLite file must live outside any cloud-sync folder
+- **Set** (`postgres://user:pass@host:5432/dbname`) → PostgreSQL, with `CONN_MAX_AGE=60`, `CONN_HEALTH_CHECKS=True`, `connect_timeout=10`.
+- **Unset** → SQLite at `SQLITE_PATH`, with the old WAL / `synchronous=NORMAL` / `transaction_mode='IMMEDIATE'` / 20s-timeout `OPTIONS`.
 
-The project directory is inside **Synology Drive**. Sync clients (Synology Drive, Dropbox, iCloud, Google Drive) do not honour the POSIX file locks SQLite depends on and will copy the file mid-write, which corrupts it. The database therefore lives at `~/sip-plan-data/db.sqlite3`, set via `SQLITE_PATH` in `.env`.
+The SQLite branch is a deliberate escape hatch, not the supported path — it keeps the app runnable when Docker is unavailable. `USE_SQLITE` and `DB_NAME`/`DB_USER`/`DB_PASSWORD`/`DB_HOST`/`DB_PORT` are **gone**; so is `mysqlclient`.
 
-Never point `SQLITE_PATH` back inside the project directory, and never commit a `.sqlite3` file. The SQLite `OPTIONS` in settings enable WAL, `synchronous=NORMAL`, `transaction_mode='IMMEDIATE'`, and a 20s lock timeout.
+### Running the database
 
-Data size is not a reason to move to MySQL — the dataset is tiny (tens of rows) and SQLite scales far beyond it. The only reason to switch is many concurrent **writers** (roughly 10+ sustained) or a multi-server deployment.
+Development needs the dev Postgres up before `runserver`:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d     # Postgres on 127.0.0.1:55432
+docker compose -f docker-compose.dev.yml down      # stop
+docker compose -f docker-compose.dev.yml down -v   # stop and erase data
+```
+
+`docker-compose.dev.yml` is deliberately **not** named `docker-compose.override.yml`: Compose merges a file by that name automatically, so copying the project to the NAS would silently publish the database port.
+
+### Why not SQLite
+
+Not performance — SQLite handled the load fine and still would at 50 users. The deciding factor is that production is **Docker on a Synology NAS**, where almost any shared folder may be picked up by Synology Drive or Hyper Backup, and a sync client copying the file mid-write corrupts it. Postgres in a named Docker volume is unreachable by those tools. Dev/prod parity matters too: Thai text ordering and case-sensitivity differ between the two engines.
+
+If anyone moves back to SQLite, the file must live outside every cloud-synced folder (it was at `~/sip-plan-data/db.sqlite3`), and a `.sqlite3` file must never be committed.
 
 ### Backups
 
-`scripts/backup_db.sh` runs `sqlite3 .backup` (safe on a live database — never `cp`), verifies `integrity_check`, gzips, and prunes backups older than `KEEP_DAYS` (default 30) from `~/sip-plan-data/backups/`. `~/sip-plan-data/pre-migration/` holds pre-move snapshots.
+`scripts/backup_db.sh` backs up **both** the database and the uploaded files, into `./backups/` (git-ignored):
+
+- `pg_dump -Fc` through `docker compose exec`, safe on a live database — never copy Postgres's data directory while it runs, and never rely on a NAS snapshot alone.
+- Verifies the dump by reading it back with `pg_restore --list`, and deletes it if that fails. Size alone is not a check.
+- Tars the `media` volume separately. The database stores only file *names* — restoring it alone loses every profile photo and attachment.
+- Prunes both beyond `KEEP_DAYS` (default 30).
+
+The restore procedure is in the script header and **has been run end to end**: data was deleted, then fully recovered from a dump. `docker compose stop web` and `pg_terminate_backend` come first — `DROP DATABASE` fails while connections are open.
+
+`~/sip-plan-data/` still holds the pre-migration SQLite file and the JSON dump the migration used.
 
 ### Docker
 
-`docker-compose.yml` starts a MySQL service but does **not** set `USE_SQLITE=False`, so the `web` container still runs on SQLite and the MySQL service goes unused. Set `USE_SQLITE=False` in the web service's environment if MySQL is actually wanted.
+`docker-compose.yml` is the real deployment (`name: sip-plan`), for DSM 7.2+ Container Manager:
+
+- `db` (postgres:17-alpine) — named volume `pgdata`, `expose` only (no published port), `pg_isready` healthcheck, and `POSTGRES_PASSWORD` with **no default**, so a missing password stops the stack instead of booting on a guessable one.
+- `web` — builds from `Dockerfile`, waits for `db` to be *healthy*, gets `DATABASE_URL` composed from the same `POSTGRES_*` values, mounts the `media` volume, publishes `${WEB_PORT:-8000}`. No source bind-mount.
+- Both cap json-file logs at 10 MB × 3, so a log loop cannot fill the NAS volume.
+
+`scripts/docker-entrypoint.sh` waits for a real database connection (not just an open port), runs `migrate` and `collectstatic --clear`, then execs gunicorn with `--forwarded-allow-ips '*'` and worker/thread/timeout counts from `GUNICORN_*`.
+
+The image is `python:3.14-slim` and installs **no build toolchain** — `psycopg[binary]` ships libpq and Pillow ships wheels. It runs as UID 1000 (`sip`), not root; a bind mount from a NAS shared folder must be `chown 1000:1000`.
+
+### Static and media files
+
+`DEBUG=False` makes Django serve nothing, so both were handled explicitly:
+
+- **static** — WhiteNoise, `CompressedManifestStaticFilesStorage`, middleware directly after `SecurityMiddleware`. Filenames get content hashes and `Cache-Control: immutable`.
+- **media** — `django.conf.urls.static.static()` returns an empty list when `DEBUG=False`, so `core/urls.py` declares its own unconditional `re_path` to `django.views.static.serve`. Without it every profile photo and attachment 404s in production. This costs a gunicorn worker per file; split `/media/` out to nginx only if the user count grows far beyond 50.
+
+### Production safety rails
+
+`core/settings.py` raises `ImproperlyConfigured` at boot when `DEBUG=False` and either `SECRET_KEY` is still the dev default or `ALLOWED_HOSTS` contains `*`. Failing to start is the intended behaviour — both let an attacker in.
+
+`SECURE_PROXY_SSL_HEADER` and `USE_X_FORWARDED_HOST` are always on for DSM's reverse proxy. The cookie/redirect flags are gated behind `DJANGO_SECURE_SSL`, **default False**: turning them on while the site is still reached over plain HTTP stops cookies being sent and locks everyone out. `manage.py check --deploy` passes with zero warnings when the production variables are set.
 
 ## Architecture
 
@@ -173,4 +225,4 @@ Registered: `User`, `Department`, `Plan`, `Project`, `ProjectMember`, `ProjectTa
 - Dates are entered and displayed as **พ.ศ.** but stored as CE. Use `ThaiDateField` (`users/forms.py`) at the form boundary — `date(2510, 1, 1)` is valid Python and would corrupt data silently. This differs from `Plan.fiscal_year`, which stores พ.ศ. directly because it is an `IntegerField`, not a `DateField`.
 - The app shell in `base.html` is a fixed-viewport layout: `body` is `overflow-hidden`, the wrapper is `h-screen overflow-hidden`, and `aside` and `main` each scroll internally. The document itself must never scroll — if it does, the shell scrolls away and leaves blank space below it.
 - `ProjectTaskBoardView` prefetches `tasks__attachments`, `tasks__comments`, `tasks__followers`. Many budget/status properties hit the database per call, so keep `select_related`/`prefetch_related` in list and board views.
-- `*.sqlite3`, `media/`, `staticfiles/`, `.venv/`, and `.env` are git-ignored; the working database lives outside the repo entirely (see **Database**).
+- `*.sqlite3`, `media/`, `staticfiles/`, `backups/`, `*.dump`, `.venv/`, and `.env` are git-ignored. `.dockerignore` excludes `.env` and `.venv/` too — both would otherwise be baked into the image.

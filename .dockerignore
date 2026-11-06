@@ -1,10 +1,43 @@
+# --- ความลับ: ห้ามหลุดเข้า image เด็ดขาด ---
+.env
+*.pem
+*.key
+
+# --- virtualenv ของเครื่อง dev (ใหญ่มากและใช้กับ Linux ไม่ได้) ---
+.venv/
 venv/
 venv_*/
+
+# --- ฐานข้อมูลและไฟล์ที่สร้างระหว่างรัน ---
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+media/
+staticfiles/
+
+# --- Python ---
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+.pytest_cache/
+
+# --- git และ editor ---
 .git
 .gitignore
+.github/
+.vscode/
+.idea/
+.claude/
+
+# --- macOS / Windows ---
 .DS_Store
+**/.DS_Store
 *.stackdump
+Thumbs.db
+
+# --- เอกสารและสคริปต์ที่ไม่ต้องใช้ใน image ---
+backups/
+*.md
+!README.md

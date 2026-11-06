@@ -52,6 +52,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # WhiteNoise ต้องอยู่ถัดจาก SecurityMiddleware ทันที และต้องมาก่อน
+    # middleware อื่นทั้งหมด เพื่อให้ตอบไฟล์ static ได้โดยไม่ผ่าน Django ทั้งสแตก
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -89,35 +92,40 @@ AUTH_USER_MODEL = 'users.User'
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-if env.bool('USE_SQLITE', default=True):
-    # ห้ามวางไฟล์ .sqlite3 ไว้ในโฟลเดอร์ที่ cloud sync (Synology Drive/Dropbox/iCloud)
-    # เพราะตัว sync ไม่เคารพ file lock ของ SQLite ทำให้ไฟล์พังได้
-    # ตั้ง SQLITE_PATH ใน .env ให้ชี้ไปนอกโฟลเดอร์ sync เสมอ
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': env('SQLITE_PATH', default=str(BASE_DIR / 'db.sqlite3')),
-            'OPTIONS': {
-                # WAL: อ่าน/เขียนพร้อมกันได้ดีขึ้น และทนแอปแครช/ไฟดับกว่าเดิม
-                'init_command': 'PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;',
-                # ล็อกทันทีที่เริ่ม transaction ลดปัญหา "database is locked"
-                'transaction_mode': 'IMMEDIATE',
-                # รอคิวเขียนได้นานขึ้น (ค่าเดิมของ Django คือ 5 วินาที)
-                'timeout': 20,
-            },
-        }
+# ---------------------------------------------------------------------------
+# ตั้งค่าฐานข้อมูลผ่าน DATABASE_URL เพียงตัวแปรเดียว
+#
+#   PostgreSQL (ใช้ตอน deploy จริงบน Synology NAS):
+#       DATABASE_URL=postgres://sip_user:<password>@db:5432/sip_plan_db
+#
+#   ไม่ตั้ง DATABASE_URL -> ใช้ SQLite ตาม SQLITE_PATH (สำหรับพัฒนาบนเครื่อง)
+#
+# ⚠️ ถ้ายังใช้ SQLite: ห้ามวางไฟล์ .sqlite3 ไว้ในโฟลเดอร์ที่ cloud sync
+#    (Synology Drive/Dropbox/iCloud) เพราะตัว sync ไม่เคารพ file lock ของ
+#    SQLite ทำให้ไฟล์พังได้ ตั้ง SQLITE_PATH ให้ชี้ไปนอกโฟลเดอร์ sync เสมอ
+# ---------------------------------------------------------------------------
+_sqlite_fallback = 'sqlite:///' + env('SQLITE_PATH', default=str(BASE_DIR / 'db.sqlite3'))
+
+DATABASES = {
+    'default': env.db_url('DATABASE_URL', default=_sqlite_fallback),
+}
+
+if DATABASES['default']['ENGINE'].endswith('sqlite3'):
+    DATABASES['default']['OPTIONS'] = {
+        # WAL: อ่าน/เขียนพร้อมกันได้ดีขึ้น และทนแอปแครช/ไฟดับกว่าเดิม
+        'init_command': 'PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;',
+        # ล็อกทันทีที่เริ่ม transaction ลดปัญหา "database is locked"
+        'transaction_mode': 'IMMEDIATE',
+        # รอคิวเขียนได้นานขึ้น (ค่าเดิมของ Django คือ 5 วินาที)
+        'timeout': 20,
     }
 else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.mysql',
-            'NAME': env('DB_NAME', default='sip_plan_db'),
-            'USER': env('DB_USER', default='sip_user'),
-            'PASSWORD': env('DB_PASSWORD', default='sippassword'),
-            'HOST': env('DB_HOST', default='db'),
-            'PORT': env('DB_PORT', default='3306'),
-        }
-    }
+    # คงการเชื่อมต่อไว้ใช้ซ้ำ ไม่ต้อง handshake ใหม่ทุก request
+    # CONN_HEALTH_CHECKS กันกรณี connection ถูกตัดระหว่างที่ค้างอยู่ในพูล
+    DATABASES['default']['CONN_MAX_AGE'] = env.int('DB_CONN_MAX_AGE', default=60)
+    DATABASES['default']['CONN_HEALTH_CHECKS'] = True
+    DATABASES['default'].setdefault('OPTIONS', {})
+    DATABASES['default']['OPTIONS'].setdefault('connect_timeout', 10)
 
 
 # Password validation
@@ -157,6 +165,17 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 import os
 if os.path.exists(BASE_DIR / 'static'):
     STATICFILES_DIRS = [BASE_DIR / 'static']
+
+# WhiteNoise: บีบอัดไฟล์ static และใส่ hash ในชื่อไฟล์
+# ทำให้ตั้ง cache ได้ยาวโดยไม่ต้องกลัวผู้ใช้ค้างไฟล์เก่า
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
@@ -236,3 +255,54 @@ GOOGLE_LOGIN_ENABLED = bool(
 EMAIL_BACKEND = env('DJANGO_EMAIL_BACKEND',
                     default='django.core.mail.backends.console.EmailBackend')
 
+
+# ===========================================================================
+# ความปลอดภัยสำหรับการใช้งานจริง (production)
+# ===========================================================================
+# บน Synology NAS ระบบมักอยู่หลัง Reverse Proxy ของ DSM ซึ่งเป็นตัวถือใบรับรอง
+# HTTPS แล้วส่งต่อมาที่ container เป็น HTTP ธรรมดา ถ้าไม่บอก Django ว่า
+# ต้นทางเป็น https มันจะเข้าใจผิดว่าเป็น http แล้ว redirect วนไม่รู้จบ
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+# ⚠️ เปิดเป็น True เฉพาะเมื่อเข้าใช้งานผ่าน https เท่านั้น
+#    ถ้าเข้าผ่าน http://<ip-ของ-nas>:8000 ตรง ๆ แล้วตั้งเป็น True
+#    คุกกี้จะไม่ถูกส่ง ทำให้ล็อกอินไม่ผ่านทั้งระบบ
+_use_https = env.bool('DJANGO_SECURE_SSL', default=False)
+SECURE_SSL_REDIRECT = _use_https
+SESSION_COOKIE_SECURE = _use_https
+CSRF_COOKIE_SECURE = _use_https
+SECURE_HSTS_SECONDS = env.int(
+    'DJANGO_HSTS_SECONDS', default=31536000 if _use_https else 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _use_https
+SECURE_HSTS_PRELOAD = _use_https
+
+# โดเมนที่เชื่อถือสำหรับ CSRF - ต้องใส่เมื่อเข้าผ่านโดเมนจริง เช่น
+#   DJANGO_CSRF_TRUSTED_ORIGINS=https://sipplan.ubu.ac.th
+CSRF_TRUSTED_ORIGINS = env.list('DJANGO_CSRF_TRUSTED_ORIGINS', default=[])
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+X_FRAME_OPTIONS = 'DENY'
+SESSION_COOKIE_HTTPONLY = True
+
+# ---------------------------------------------------------------------------
+# กันการ deploy ด้วยค่า dev โดยไม่ตั้งใจ
+# ปล่อยให้ระบบขึ้นด้วยค่าเหล่านี้อันตรายกว่าการไม่ขึ้นเลย จึงหยุดตั้งแต่บูต
+# ---------------------------------------------------------------------------
+if not DEBUG:
+    from django.core.exceptions import ImproperlyConfigured
+
+    if SECRET_KEY == 'django-insecure-default-key-for-dev':
+        raise ImproperlyConfigured(
+            'ต้องตั้ง DJANGO_SECRET_KEY ใน .env ก่อนใช้งานจริง '
+            'สร้างค่าใหม่ได้ด้วย: '
+            'python -c "from django.core.management.utils import '
+            'get_random_secret_key as k; print(k())"'
+        )
+    if '*' in ALLOWED_HOSTS:
+        raise ImproperlyConfigured(
+            'ห้ามตั้ง DJANGO_ALLOWED_HOSTS=* ตอน DEBUG=False '
+            'ให้ระบุโดเมนหรือ IP ของ NAS ให้ชัดเจน เช่น '
+            'DJANGO_ALLOWED_HOSTS=sipplan.ubu.ac.th,192.168.1.50'
+        )
