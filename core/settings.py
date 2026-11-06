@@ -23,6 +23,16 @@ DEBUG = env('DJANGO_DEBUG')
 
 ALLOWED_HOSTS = env.list('DJANGO_ALLOWED_HOSTS', default=['*'])
 
+# HEALTHCHECK ใน Dockerfile เรียก curl http://localhost:8000/ จากในคอนเทนเนอร์เอง
+# คำขอนั้นมี Host เป็น localhost ถ้าไม่อยู่ใน ALLOWED_HOSTS Django จะตอบ 400
+# แล้ว curl -f ถือว่าล้มเหลว ทำให้คอนเทนเนอร์ถูกมาร์คว่า unhealthy
+# ทั้งที่แอปทำงานปกติ (เคยเกิดจริงตอน deploy ครั้งแรกบน NAS)
+#
+# สองชื่อนี้เข้าถึงได้จากในเครื่องเท่านั้น ไม่ได้เปิดช่องให้ใครจากภายนอก
+for _local_host in ('localhost', '127.0.0.1'):
+    if _local_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_local_host)
+
 
 # Application definition
 

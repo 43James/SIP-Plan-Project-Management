@@ -105,6 +105,8 @@ The image is `python:3.14-slim` and installs **no build toolchain** — `psycopg
 
 `core/settings.py` raises `ImproperlyConfigured` at boot when `DEBUG=False` and either `SECRET_KEY` is still the dev default or `ALLOWED_HOSTS` contains `*`. Failing to start is the intended behaviour — both let an attacker in.
 
+`ALLOWED_HOSTS` always gains `localhost` and `127.0.0.1` after being read from the environment. The Dockerfile's `HEALTHCHECK` curls `http://localhost:8000/accounts/login/` from inside the container, so without them Django answers 400, `curl -f` fails, and the container is marked unhealthy while the app serves users normally — it showed up as an orange dot in Container Manager on the first NAS deploy. Neither name is reachable from outside the container.
+
 `SECURE_PROXY_SSL_HEADER` and `USE_X_FORWARDED_HOST` are always on for DSM's reverse proxy. The cookie/redirect flags are gated behind `DJANGO_SECURE_SSL`, **default False**: turning them on while the site is still reached over plain HTTP stops cookies being sent and locks everyone out. `manage.py check --deploy` passes with zero warnings when the production variables are set.
 
 ## Architecture
