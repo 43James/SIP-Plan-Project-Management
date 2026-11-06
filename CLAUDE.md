@@ -136,6 +136,42 @@ Nothing records "money spent." Remaining budget is recomputed on read from tasks
 
 So marking a task complete is what "disburses" its budget. `DashboardView.total_allocated` deliberately sums **parent plans only**, because child plan budgets are already counted inside the parent — don't "fix" this into summing all plans.
 
+### Derived values are annotated, with the per-row query as fallback
+
+Those properties each ran their own query, so a page that listed rows multiplied them: the dashboard issued **613 queries** and the project list **542** at 60 plans / 90 projects.
+
+The fix keeps every property signature and every template untouched. Three querysets precompute the same values in one query, and each property reads the annotation when it is there:
+
+| QuerySet method | Annotates | Feeds |
+|---|---|---|
+| `Plan.objects.with_stats()` | `_total_projects_count`, `_completed_projects_count`, `_used_current_budget`, `_used_carry_over_budget` | `total_projects_count`, `completed_projects_count`, `remaining_*_budget` |
+| `Project.objects.with_task_status()` | `_task_count`, `_open_task_count` | `dynamic_status_display` |
+| `TaskGroup.objects.with_disbursed()` | `_disbursed_amount` | `disbursed_amount`, `remaining_budget`, `budget_usage_percent` |
+
+**Both paths must stay in agreement.** The annotation is the fast path, the original query the fallback for a bare instance (`Plan.objects.get(pk=1)` still works unannotated). Change the rule in one and you must change it in the other — a mismatch shows up as wrong baht figures, not as an error. `"สำเร็จ"` in particular is encoded twice: as `.filter(tasks__isnull=False).exclude(tasks__is_completed=False)` in `PlanQuerySet.with_project_counts`, and as the `has_tasks and not has_open` test in `dynamic_status_display`.
+
+Result, measured A/B on identical data (60 plans, 90 projects, 540 tasks):
+
+| Page | Before | After |
+|---|---|---|
+| Dashboard | 613 queries / 239 ms | 10 / 35 ms |
+| Plan list | 186 / 187 ms | 6 / 26 ms |
+| Project list | 542 / 346 ms | 8 / 23 ms |
+| Project detail | 36 / 17 ms | 21 / 12 ms |
+| Task board | 24 / 12 ms | 12 / 8 ms |
+
+Query counts are flat from 20 to 100 plans — they no longer track row count.
+
+### Indexes
+
+Three, all confirmed used by the planner against 400 plans / 1,200 projects / 12,000 tasks:
+
+- `task_proj_done_source_idx` on `ProjectTask(project, is_completed, budget_source)` — carries every budget aggregation, ~8,000 scans per dashboard load.
+- `project_plan_start_idx` on `Project(plan, start_date)`.
+- `plan_active_year_idx` on `Plan(is_deleted, fiscal_year)`.
+
+Two more were tried and removed after measuring zero scans: `Project(end_date)` (the "เกินกำหนด" test runs in Python on rows already fetched, never as a DB filter) and `ProjectTask(task_group, is_completed)` (a group holds few tasks, so the planner prefers the `task_group_id` FK index and filters in place). Measure before adding another — an unused index only slows writes.
+
 ### Project status is computed, not stored
 
 `Project.status` (with `STATUS_CHOICES`) exists on the model but the UI does not use it. Display goes through `Project.dynamic_status_display`, derived from task completion and dates: `"สำเร็จ"` (all tasks done) → `"เกินกำหนด"` (past `end_date`) → `"กำลังดำเนินการ (ขอขยายเวลา)"` (`is_extended`) → `"กำลังดำเนินการ"`. Aggregates such as `Plan.completed_projects_count` compare against these Thai strings, so changing the wording breaks counting.
@@ -224,5 +260,7 @@ Registered: `User`, `Department`, `Plan`, `Project`, `ProjectMember`, `ProjectTa
 - `ModelForm.save(commit=False)` has already written the new upload onto `instance.photo` by the time custom save logic runs, so the *old* file name must be captured in `__init__` (`_remember_old_photos`) or the previous image is orphaned on disk.
 - Dates are entered and displayed as **พ.ศ.** but stored as CE. Use `ThaiDateField` (`users/forms.py`) at the form boundary — `date(2510, 1, 1)` is valid Python and would corrupt data silently. This differs from `Plan.fiscal_year`, which stores พ.ศ. directly because it is an `IntegerField`, not a `DateField`.
 - The app shell in `base.html` is a fixed-viewport layout: `body` is `overflow-hidden`, the wrapper is `h-screen overflow-hidden`, and `aside` and `main` each scroll internally. The document itself must never scroll — if it does, the shell scrolls away and leaves blank space below it.
-- `ProjectTaskBoardView` prefetches `tasks__attachments`, `tasks__comments`, `tasks__followers`. Many budget/status properties hit the database per call, so keep `select_related`/`prefetch_related` in list and board views.
+- **Any view that lists rows must prepare its queryset**, or the derived properties fall back to one query per row. Use `with_stats()` / `with_task_status()` / `with_disbursed()` (see **Derived values are annotated**) plus `select_related`/`prefetch_related`.
+- Prefetch against the relation the *template* actually walks. `project_detail.html` loops `group.tasks.all`, not the `tasks` context variable, so prefetching `tasks` alone changed nothing until the `Prefetch` was attached to `task_groups` as well.
+- Task cards read `tags` and `assignees` on every task; `ProjectTaskBoardView` prefetches those alongside `tasks__attachments`, `tasks__comments`, `tasks__followers`. Project cards read `created_by` and `members.user` — hence `select_related('plan', 'created_by')` and the `_members_prefetch()` helper in `plans/views.py`.
 - `*.sqlite3`, `media/`, `staticfiles/`, `backups/`, `*.dump`, `.venv/`, and `.env` are git-ignored. `.dockerignore` excludes `.env` and `.venv/` too — both would otherwise be baked into the image.

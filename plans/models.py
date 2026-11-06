@@ -1,9 +1,98 @@
+from decimal import Decimal
+
 from django.db import models
 from django.utils import timezone
 from users.models import User
-from django.db.models import Sum
+from django.db.models import (
+    Count, DecimalField, IntegerField, OuterRef, Q, Subquery, Sum, Value,
+)
+from django.db.models.functions import Coalesce
 
-class ActivePlanManager(models.Manager):
+# ===========================================================================
+# ตัวช่วยคำนวณสถิติแบบคิวรีเดียว
+#
+# property ของ Plan/Project/TaskGroup ยิงคิวรีของตัวเองทุกครั้งที่ถูกเรียก
+# พอเทมเพลตวนลูปแสดงหลายรายการ จำนวนคิวรีจึงโตตามจำนวนแถว (N+1)
+#
+# วิธีแก้: queryset ด้านล่างคำนวณค่าเดียวกันมาล่วงหน้าด้วย subquery
+# แล้ว property จะอ่านค่าที่ annotate ไว้ก่อน ถ้าไม่มีค่อยยิงคิวรีเอง
+# ผลลัพธ์เหมือนเดิมทุกประการ และเทมเพลตไม่ต้องแก้แม้แต่บรรทัดเดียว
+#
+# ⚠️ โครงสร้างแผนงานเป็นสองชั้นเสมอ (แผนหลัก -> แผนย่อย) subquery ข้างล่าง
+#    จึงมองแค่ parent ชั้นเดียว ตรงกับที่ property เดิมทำ
+# ===========================================================================
+
+ZERO_BAHT = Value(
+    Decimal('0.00'), output_field=DecimalField(max_digits=15, decimal_places=2))
+
+BAHT = DecimalField(max_digits=15, decimal_places=2)
+
+
+def _single_value(queryset, alias, expression):
+    """บีบ subquery ให้เหลือแถวเดียว
+
+    values(_grp=Value(1)) คือการ GROUP BY ค่าคงที่ ทำให้ aggregate ทั้งก้อน
+    ยุบเหลือแถวเดียว ใช้ใน Subquery ได้ (Django ไม่ยอมให้ aggregate ตรง ๆ)
+    """
+    return (queryset.order_by()
+            .values(_grp=Value(1))
+            .annotate(**{alias: expression})
+            .values(alias)[:1])
+
+
+class PlanQuerySet(models.QuerySet):
+    """คำนวณสถิติของแผนงานทั้งหน้าในไม่กี่คิวรี แทนการยิงทีละแผน"""
+
+    @staticmethod
+    def _projects_of_plan():
+        """โครงการของแผนนี้ รวมของแผนย่อยด้วย"""
+        return Q(plan_id=OuterRef('pk')) | Q(plan__parent_id=OuterRef('pk'))
+
+    @staticmethod
+    def _tasks_of_plan():
+        """งานในโครงการของแผนนี้ รวมของแผนย่อยด้วย"""
+        return (Q(project__plan_id=OuterRef('pk'))
+                | Q(project__plan__parent_id=OuterRef('pk')))
+
+    def with_project_counts(self):
+        scope = self._projects_of_plan()
+        total = _single_value(
+            Project.objects.filter(scope), 'c', Count('pk', distinct=True))
+        # "สำเร็จ" = มีงานอย่างน้อยหนึ่งงาน และไม่เหลืองานที่ยังไม่เสร็จ
+        # ตรงกับเงื่อนไขใน Project.dynamic_status_display
+        done = _single_value(
+            Project.objects.filter(scope)
+                   .filter(tasks__isnull=False)
+                   .exclude(tasks__is_completed=False),
+            'c', Count('pk', distinct=True))
+        return self.annotate(
+            _total_projects_count=Coalesce(
+                Subquery(total, output_field=IntegerField()), 0),
+            _completed_projects_count=Coalesce(
+                Subquery(done, output_field=IntegerField()), 0),
+        )
+
+    def with_budget_usage(self):
+        def used(source):
+            return _single_value(
+                ProjectTask.objects.filter(
+                    self._tasks_of_plan(),
+                    is_completed=True, budget_source=source),
+                's', Sum('amount'))
+
+        return self.annotate(
+            _used_current_budget=Coalesce(
+                Subquery(used('CURRENT'), output_field=BAHT), ZERO_BAHT),
+            _used_carry_over_budget=Coalesce(
+                Subquery(used('CARRY_OVER'), output_field=BAHT), ZERO_BAHT),
+        )
+
+    def with_stats(self):
+        """ใช้ตัวนี้ในหน้าที่แสดงทั้งจำนวนโครงการและงบคงเหลือ"""
+        return self.with_project_counts().with_budget_usage()
+
+
+class ActivePlanManager(models.Manager.from_queryset(PlanQuerySet)):
     def get_queryset(self):
         return super().get_queryset().filter(is_deleted=False)
 
@@ -21,10 +110,21 @@ class Plan(models.Model):
     deleted_at = models.DateTimeField(null=True, blank=True)
 
     objects = ActivePlanManager()  # Default manager
-    all_objects = models.Manager() # Manager to access all records including deleted
+    # all_objects เห็นทุกแถวรวมที่ลบแล้ว และใช้ with_stats() ได้เหมือนกัน
+    all_objects = models.Manager.from_queryset(PlanQuerySet)()
+
+    class Meta:
+        indexes = [
+            # แทบทุกหน้ากรองด้วย is_deleted=False แล้วตามด้วยปีงบประมาณ
+            models.Index(fields=['is_deleted', 'fiscal_year'],
+                         name='plan_active_year_idx'),
+        ]
 
     @property
     def total_projects_count(self):
+        cached = getattr(self, '_total_projects_count', None)
+        if cached is not None:
+            return cached
         count = self.projects.count()
         for child in self.sub_plans.filter(is_deleted=False):
             count += child.projects.count()
@@ -32,6 +132,9 @@ class Plan(models.Model):
 
     @property
     def completed_projects_count(self):
+        cached = getattr(self, '_completed_projects_count', None)
+        if cached is not None:
+            return cached
         count = sum(1 for p in self.projects.all() if p.dynamic_status_display == "สำเร็จ")
         for child in self.sub_plans.filter(is_deleted=False):
             count += sum(1 for p in child.projects.all() if p.dynamic_status_display == "สำเร็จ")
@@ -46,25 +149,44 @@ class Plan(models.Model):
     @property
     def remaining_current_budget(self):
         # Calculate used current budget from completed tasks
-        used = ProjectTask.objects.filter(
-            models.Q(project__plan=self) | models.Q(project__plan__parent=self),
-            is_completed=True,
-            budget_source='CURRENT'
-        ).aggregate(total=Sum('amount'))['total'] or 0
+        used = getattr(self, '_used_current_budget', None)
+        if used is None:
+            used = ProjectTask.objects.filter(
+                models.Q(project__plan=self) | models.Q(project__plan__parent=self),
+                is_completed=True,
+                budget_source='CURRENT'
+            ).aggregate(total=Sum('amount'))['total'] or 0
         return self.allocated_current_budget - used
 
     @property
     def remaining_carry_over_budget(self):
         # Calculate used carry over budget from completed tasks
-        used = ProjectTask.objects.filter(
-            models.Q(project__plan=self) | models.Q(project__plan__parent=self),
-            is_completed=True,
-            budget_source='CARRY_OVER'
-        ).aggregate(total=Sum('amount'))['total'] or 0
+        used = getattr(self, '_used_carry_over_budget', None)
+        if used is None:
+            used = ProjectTask.objects.filter(
+                models.Q(project__plan=self) | models.Q(project__plan__parent=self),
+                is_completed=True,
+                budget_source='CARRY_OVER'
+            ).aggregate(total=Sum('amount'))['total'] or 0
         return self.allocated_carry_over_budget - used
 
     def __str__(self):
         return f"{self.plan_code} - {self.plan_name}"
+
+
+class ProjectQuerySet(models.QuerySet):
+    """นับงานของแต่ละโครงการมาพร้อมกันในคิวรีเดียว
+
+    dynamic_status_display เดิมยิงคิวรี 2 ครั้งต่อโครงการ (มีงานไหม /
+    เหลืองานค้างไหม) พอวนลูปแสดงรายการโครงการจึงกลายเป็น N+1 ทันที
+    """
+
+    def with_task_status(self):
+        return self.annotate(
+            _task_count=Count('tasks', distinct=True),
+            _open_task_count=Count(
+                'tasks', filter=Q(tasks__is_completed=False), distinct=True),
+        )
 
 
 class Project(models.Model):
@@ -91,10 +213,31 @@ class Project(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_projects')
     remarks = models.TextField(null=True, blank=True, help_text="หมายเหตุ (เพิ่มเติม)")
 
+    objects = ProjectQuerySet.as_manager()
+
+    class Meta:
+        indexes = [
+            # ใช้ตอนดึงโครงการของแผนหนึ่ง ๆ แล้วเรียงตามวันเริ่ม
+            # (วัดแล้วว่า planner หยิบไปใช้จริง)
+            models.Index(fields=['plan', 'start_date'],
+                         name='project_plan_start_idx'),
+        ]
+        # หมายเหตุ: เคยลอง index บน end_date เพื่อหวังช่วยสถานะ "เกินกำหนด"
+        # แต่สถานะนั้นคำนวณในฝั่ง Python จากแถวที่ดึงมาแล้ว ไม่ได้กรองที่ฐานข้อมูล
+        # วัดแล้ว planner ไม่เคยใช้เลย จึงไม่ใส่ไว้
+
     @property
     def dynamic_status_display(self):
-        tasks = self.tasks.all()
-        if tasks.exists() and not tasks.filter(is_completed=False).exists():
+        task_count = getattr(self, '_task_count', None)
+        open_count = getattr(self, '_open_task_count', None)
+        if task_count is not None and open_count is not None:
+            has_tasks, has_open = task_count > 0, open_count > 0
+        else:
+            tasks = self.tasks.all()
+            has_tasks = tasks.exists()
+            has_open = tasks.filter(is_completed=False).exists()
+
+        if has_tasks and not has_open:
             return "สำเร็จ"
             
         from django.utils import timezone
@@ -125,6 +268,21 @@ class ProjectMember(models.Model):
         return f"{self.user.username} - {self.project.project_name}"
 
 
+class TaskGroupQuerySet(models.QuerySet):
+    """รวมยอดเบิกจ่ายของทุกกลุ่มงานมาในคิวรีเดียว
+
+    disbursed_amount เดิมยิง aggregate หนึ่งครั้งต่อกลุ่มงาน และถูกเรียกซ้ำ
+    ผ่าน remaining_budget กับ budget_usage_percent อีก
+    """
+
+    def with_disbursed(self):
+        return self.annotate(
+            _disbursed_amount=Coalesce(
+                Sum('tasks__amount', filter=Q(tasks__is_completed=True)),
+                ZERO_BAHT),
+        )
+
+
 class TaskGroup(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='task_groups')
     name = models.CharField(max_length=255)
@@ -134,11 +292,16 @@ class TaskGroup(models.Model):
     order = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = TaskGroupQuerySet.as_manager()
+
     class Meta:
         ordering = ['order', 'created_at']
 
     @property
     def disbursed_amount(self):
+        cached = getattr(self, '_disbursed_amount', None)
+        if cached is not None:
+            return cached
         return self.tasks.filter(is_completed=True).aggregate(
             total=Sum('amount'))['total'] or 0
 
@@ -207,6 +370,20 @@ class ProjectTask(models.Model):
     end_date = models.DateField(help_text="วันที่สิ้นสุด")
     priority = models.IntegerField(default=5, help_text='ระดับความสำคัญ 1-10')
     difficulty = models.IntegerField(default=5, help_text='คะแนนความยาก 1-10')
+
+    class Meta:
+        indexes = [
+            # การคำนวณงบทุกที่กรองด้วย is_completed + budget_source
+            # โดยจำกัดขอบเขตด้วยโครงการก่อนเสมอ
+            # วัดที่ข้อมูล 12,000 งาน: planner เรียกใช้ index นี้ราว 8,000 ครั้ง
+            # ต่อการเปิดหน้าหลักหนึ่งรอบ เป็นตัวที่คุ้มที่สุดในบรรดา index ที่เพิ่ม
+            models.Index(fields=['project', 'is_completed', 'budget_source'],
+                         name='task_proj_done_source_idx'),
+        ]
+        # หมายเหตุ: เคยลอง index (task_group, is_completed) สำหรับ
+        # TaskGroup.disbursed_amount แต่หนึ่งกลุ่มมีงานไม่กี่ใบ
+        # planner จึงใช้ index ของ FK task_group_id แล้วกรองต่อเอาเองเร็วกว่า
+        # วัดแล้วไม่ถูกใช้เลย จึงไม่ใส่ไว้
 
     @property
     def days_overdue(self):

@@ -3,13 +3,35 @@ from django.views.generic import ListView, CreateView, UpdateView, DetailView, D
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.decorators import login_required
 from django.urls import reverse_lazy, reverse
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Prefetch
 from django.utils import timezone
 from django.contrib import messages
 from django.http import JsonResponse
 from users.middleware import json_endpoint
 from .models import Plan, Project, ProjectTask, ProjectMember, TaskAttachment, TaskComment, TaskFollower, TaskGroup
 from .forms import ProjectForm, PlanForm, ProjectTaskForm, ProjectMemberForm, TaskCommentForm, TaskGroupForm
+
+
+def _task_detail_prefetch():
+    """งานพร้อมของที่แนบมากับงาน
+
+    เทมเพลตเรียก attachments.count / comments.count / tags.all ของทุกงาน
+    ถ้าไม่ prefetch จะยิงคิวรีอย่างน้อย 3 ครั้งต่องานหนึ่งใบ
+    """
+    return Prefetch(
+        'tasks',
+        queryset=ProjectTask.objects.prefetch_related(
+            'attachments', 'comments', 'tags', 'assignees'))
+
+
+def _members_prefetch():
+    """การ์ดโครงการแสดงรายชื่อสมาชิกและนับจำนวน
+
+    ถ้าไม่ prefetch มาพร้อมผู้ใช้ จะยิงคิวรี 4 ครั้งต่อโครงการหนึ่งใบ
+    (นับสมาชิก 3 ครั้ง + ดึงรายชื่อ 1 ครั้ง) แล้วตามด้วยคิวรีผู้ใช้อีกคนละครั้ง
+    """
+    return Prefetch('members',
+                    queryset=ProjectMember.objects.select_related('user'))
 
 
 class BudgetOfficerMixin(UserPassesTestMixin):
@@ -25,7 +47,17 @@ class DashboardView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         from django.db.models.functions import Length
-        qs = Plan.objects.filter(is_deleted=False).annotate(code_len=Length('plan_code'))
+        qs = (
+            Plan.objects.filter(is_deleted=False)
+            # คำนวณจำนวนโครงการและงบคงเหลือมาพร้อมกันในคิวรีเดียว
+            .with_stats()
+            # เทมเพลตวน child.projects.all แล้วเรียก dynamic_status_display
+            # จึงต้อง prefetch พร้อมกับ annotate สถานะงานมาด้วย
+            .prefetch_related(
+                Prefetch('projects', queryset=Project.objects.with_task_status())
+            )
+            .annotate(code_len=Length('plan_code'))
+        )
         sort = self.request.GET.get('sort', 'code_asc')
         if sort == 'code_desc':
             return qs.order_by('-fiscal_year', '-code_len', '-plan_code')
@@ -91,7 +123,11 @@ class PlanListView(LoginRequiredMixin, BudgetOfficerMixin, ListView):
         search_q = self.request.GET.get('q', '').strip()
 
         # ดึงแผนงานทั้งหมดตามปีที่เลือก
-        qs = Plan.objects.filter(is_deleted=False)
+        # เทมเพลตเรียก plan.projects.count ต่อแผน จึง prefetch มาให้
+        # เมื่อ prefetch แล้ว .count จะอ่านจากแคช ไม่ยิงคิวรีใหม่
+        qs = (Plan.objects.filter(is_deleted=False)
+              .with_stats()
+              .prefetch_related('projects'))
         if selected_year:
             qs = qs.filter(fiscal_year=selected_year)
 
@@ -156,14 +192,18 @@ class PlanDetailView(LoginRequiredMixin, DetailView):
     context_object_name = 'plan'
     
     def get_queryset(self):
-        return Plan.objects.filter(is_deleted=False)
+        return Plan.objects.filter(is_deleted=False).with_stats()
         
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         plan = self.object
-        context['projects'] = plan.projects.all().order_by('-start_date')
+        context['projects'] = (
+            plan.projects.with_task_status()
+            .select_related('plan')
+            .order_by('-start_date')
+        )
         if plan.parent is None:
-            context['sub_plans'] = plan.sub_plans.filter(is_deleted=False)
+            context['sub_plans'] = plan.sub_plans.filter(is_deleted=False).with_stats()
         return context
 
 class ProjectFilterMixin:
@@ -242,7 +282,10 @@ class ProjectListView(LoginRequiredMixin, ProjectFilterMixin, ListView):
     context_object_name = 'projects'
 
     def get_queryset(self):
-        qs = Project.objects.select_related('plan').all().order_by('-start_date')
+        qs = (Project.objects.select_related('plan', 'created_by')
+              .with_task_status()
+              .prefetch_related(_members_prefetch())
+              .order_by('-start_date'))
         self.queryset = qs
         return super().get_queryset()
 
@@ -253,9 +296,11 @@ class MyProjectListView(LoginRequiredMixin, ProjectFilterMixin, ListView):
 
     def get_queryset(self):
         from django.db.models import Q
-        qs = Project.objects.filter(
+        qs = (Project.objects.filter(
             Q(created_by=self.request.user) | Q(members__user=self.request.user)
-        ).select_related('plan').distinct().order_by('-start_date')
+        ).select_related('plan', 'created_by').with_task_status()
+         .prefetch_related(_members_prefetch())
+         .distinct().order_by('-start_date'))
         self.queryset = qs
         return super().get_queryset()
         
@@ -302,12 +347,26 @@ class ProjectDetailView(LoginRequiredMixin, DetailView):
     template_name = 'plans/project_detail.html'
     context_object_name = 'project'
 
+    def get_queryset(self):
+        return (Project.objects
+                .select_related('plan', 'created_by')
+                .with_task_status()
+                .prefetch_related(_task_detail_prefetch()))
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        tasks = self.object.tasks.all()
+        # เทมเพลตวนงานแล้วเรียก attachments.count / comments.count / tags
+        # ของแต่ละงาน จึงต้อง prefetch มาพร้อมกันทั้งหมด
+        tasks = self.object.tasks.prefetch_related(
+            'attachments', 'comments', 'tags').select_related('task_group')
         context['tasks'] = tasks
-        context['task_groups'] = self.object.task_groups.all()
-        context['members'] = self.object.members.all()
+        # เทมเพลตวนงานผ่าน group.tasks.all จึงต้อง prefetch งานไว้ที่กลุ่มงาน
+        # ไม่ใช่แค่ที่ context['tasks']
+        context['task_groups'] = (
+            self.object.task_groups
+            .with_disbursed()
+            .prefetch_related(_task_detail_prefetch()))
+        context['members'] = self.object.members.select_related('user')
         
         completed_tasks = tasks.filter(is_completed=True)
         disbursed_current = completed_tasks.filter(budget_source='CURRENT').aggregate(total=Sum('amount'))['total'] or 0
@@ -592,11 +651,19 @@ class ProjectTaskBoardView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
         context = super().get_context_data(**kwargs)
         project = self.object
         # Pre-fetch all groups and their tasks to avoid N+1 queries
-        groups = project.task_groups.prefetch_related('tasks', 'tasks__attachments', 'tasks__comments', 'tasks__followers').all()
+        # task_card.html เรียก tags กับ assignees ของทุกใบงานด้วย
+        # ถ้าขาดสองตัวนี้จะกลายเป็น N+1 ต่อหนึ่งใบงานทันที
+        groups = (project.task_groups
+                  .with_disbursed()
+                  .prefetch_related('tasks', 'tasks__attachments',
+                                    'tasks__comments', 'tasks__followers',
+                                    'tasks__tags', 'tasks__assignees'))
         context['task_groups'] = groups
         
         # Tasks without a group
-        context['ungrouped_tasks'] = project.tasks.filter(task_group__isnull=True).prefetch_related('attachments', 'comments', 'followers')
+        context['ungrouped_tasks'] = project.tasks.filter(
+            task_group__isnull=True).prefetch_related(
+            'attachments', 'comments', 'followers', 'tags', 'assignees')
         
         # For the add group modal
         context['group_form'] = TaskGroupForm()
