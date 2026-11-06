@@ -51,13 +51,25 @@ BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
 KEEP_DAYS="${KEEP_DAYS:-30}"
 COMPOSE_PROJECT="${COMPOSE_PROJECT:-sip-plan}"
 
-# อ่านชื่อฐานข้อมูล/ผู้ใช้จาก .env ถ้ามี
-if [ -f "$PROJECT_DIR/.env" ]; then
-    # shellcheck disable=SC1091
-    set -a; . "$PROJECT_DIR/.env"; set +a
-fi
-DB_NAME="${POSTGRES_DB:-sip_plan_db}"
-DB_USER="${POSTGRES_USER:-sip_user}"
+# อ่านเฉพาะสองค่าที่ต้องใช้จาก .env
+#
+# ⚠️ ห้าม source ไฟล์ .env เข้า shell (set -a; . .env)
+#    เพราะ DJANGO_SECRET_KEY ที่ Django สุ่มมามีอักขระอย่าง & # $ ( ) ปนอยู่
+#    shell จะตีความเป็นคำสั่งแล้ว script พังทันที (และอันตรายด้วย)
+#    จึงดึงมาเฉพาะคีย์ที่ต้องใช้ แบบไม่ผ่านการตีความของ shell
+read_env() {
+    local key="$1" default="$2" line
+    [ -f "$PROJECT_DIR/.env" ] || { printf '%s' "$default"; return; }
+    line="$(grep -E "^[[:space:]]*${key}=" "$PROJECT_DIR/.env" | tail -1)" || true
+    if [ -z "$line" ]; then
+        printf '%s' "$default"
+    else
+        printf '%s' "${line#*=}"
+    fi
+}
+
+DB_NAME="$(read_env POSTGRES_DB sip_plan_db)"
+DB_USER="$(read_env POSTGRES_USER sip_user)"
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 DB_TARGET="$BACKUP_DIR/sip-plan_$STAMP.dump"
